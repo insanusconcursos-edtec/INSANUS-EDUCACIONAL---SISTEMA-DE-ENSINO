@@ -1,6 +1,7 @@
+
 import React, { useState } from 'react';
 import { ChevronRight, Plus, Trash2, BookOpen, ArrowUp, ArrowDown } from 'lucide-react';
-import { CourseEditalDiscipline, CourseEditalTopic } from '../../../../../types/courseEdital';
+import { CourseEditalDiscipline, CourseEditalTopic } from '../../../../types/courseEdital';
 import { AdminCourseEditalTopic } from './AdminCourseEditalTopic';
 import { ConfirmationModal } from '../../ui/ConfirmationModal';
 

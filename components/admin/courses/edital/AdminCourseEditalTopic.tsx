@@ -1,3 +1,4 @@
+
 import React, { useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { 
@@ -5,8 +6,8 @@ import {
   PlayCircle, FileText, BrainCircuit, Layers, X, Link as LinkIcon,
   ArrowUp, ArrowDown, StickyNote, Save
 } from 'lucide-react';
-import { CourseEditalTopic, LinkedLesson, MaterialPDF } from '../../../../../types/courseEdital';
-import { courseService } from '../../../../../services/courseService';
+import { CourseEditalTopic, LinkedLesson, MaterialPDF } from '../../../../types/courseEdital';
+import { courseService } from '../../../../services/courseService';
 
 import MindMapManager from '../../metas/tools/mindmap/MindMapManager';
 import FlashcardEditor from '../../metas/tools/FlashcardEditor';
