@@ -1,11 +1,13 @@
+
 import React, { useState, useEffect } from 'react';
 import { OnlineCourse, CourseModule, CONTEST_STATUS_LABELS } from '../../../types/course';
 import { courseService } from '../../../services/courseService';
 import { StudentModuleCard } from './StudentModuleCard';
 import { CoursePlayer } from './player/CoursePlayer';
 import { useAuth } from '../../../contexts/AuthContext';
-import { AlertCircle, Calendar, CheckCircle2, Clock, Siren, LayoutList, ListTree } from 'lucide-react';
+import { AlertCircle, Calendar, CheckCircle2, Clock, Siren, LayoutList, ListTree, PlayCircle } from 'lucide-react';
 import { StudentCourseEdital } from './edital/StudentCourseEdital';
+import { CourseReviewDashboard } from './reviews/CourseReviewDashboard';
 
 interface CourseDetailsProps {
   course: OnlineCourse;
@@ -17,6 +19,7 @@ export function CourseDetails({ course, onBack }: CourseDetailsProps) {
   
   // ESTADO DAS ABAS (NOVO) - MÓDULOS ou EDITAL
   const [activeTab, setActiveTab] = useState<'MODULES' | 'EDITAL'>('MODULES');
+  const [focusTopicId, setFocusTopicId] = useState<string | null>(null);
 
   const [modules, setModules] = useState<CourseModule[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,85 +57,10 @@ export function CourseDetails({ course, onBack }: CourseDetailsProps) {
     loadData();
   }, [course.id, currentUser]);
 
-  // --- LÓGICA DO CONTADOR REGRESSIVO ---
-  const getDaysUntilExam = () => {
-    if (!course.examDate) return 0;
-    const today = new Date();
-    // Ajuste fuso: Criar data "local" ignorando hora
-    const examDateStr = course.examDate + "T00:00:00"; 
-    const exam = new Date(examDateStr);
-    
-    // Diferença em milissegundos
-    const diffTime = exam.getTime() - today.getTime();
-    // Converter para dias (arredondando para cima)
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return diffDays > 0 ? diffDays : 0;
-  };
-
-  const daysRemaining = getDaysUntilExam();
-
-  // Helper para renderizar o Card de Status
-  const renderStatusCard = () => {
-    if (!course.contestStatus || course.contestStatus === 'SEM_PREVISAO') return null;
-
-    const statusConfig: any = {
-        'COMISSAO_FORMADA': { color: 'blue', icon: <CheckCircle2 size={20} />, label: 'Comissão Formada' },
-        'AUTORIZADO': { color: 'green', icon: <CheckCircle2 size={20} />, label: 'Concurso Autorizado!' },
-        'BANCA_CONTRATADA': { color: 'yellow', icon: <AlertCircle size={20} />, label: `Banca Definida: ${course.examBoard || 'A definir'}` },
-        'EDITAL_PUBLICADO': { color: 'red', icon: <Siren size={20} />, label: 'EDITAL PUBLICADO!' }
-    };
-
-    const config = statusConfig[course.contestStatus] || { color: 'gray', icon: <Clock size={20} />, label: CONTEST_STATUS_LABELS[course.contestStatus] };
-
-    // Estilos baseados na cor
-    const colors: any = {
-        blue: 'bg-blue-900/20 border-blue-600/30 text-blue-400',
-        green: 'bg-green-900/20 border-green-600/30 text-green-400',
-        yellow: 'bg-yellow-900/20 border-yellow-600/30 text-yellow-500',
-        red: 'bg-red-900/20 border-red-600/30 text-red-500',
-        gray: 'bg-zinc-800 border-zinc-700 text-zinc-400'
-    };
-
-    const activeStyle = colors[config.color];
-
-    return (
-        <div className={`mt-6 p-4 rounded-xl border flex flex-col md:flex-row items-center justify-between gap-4 ${activeStyle} relative overflow-hidden group transition-all duration-500`}>
-            
-            {/* Informação do Status */}
-            <div className="flex items-center gap-3 z-10 w-full md:w-auto">
-                <div className={`p-3 rounded-full bg-black/30 backdrop-blur-sm shadow-inner ${config.color === 'red' ? 'animate-pulse' : ''}`}>
-                    {config.icon}
-                </div>
-                <div>
-                    <span className="text-[10px] font-black uppercase opacity-70 block mb-0.5 tracking-wider">Status do Concurso</span>
-                    <h3 className="text-lg font-black uppercase tracking-tight leading-none">{config.label}</h3>
-                    {course.contestStatus === 'EDITAL_PUBLICADO' && course.examDate && (
-                         <span className="text-xs font-bold mt-1 block opacity-90 flex items-center gap-1 bg-black/20 w-fit px-2 py-0.5 rounded">
-                            <Calendar size={12} />
-                            Data da Prova: {new Date(course.examDate + "T12:00:00").toLocaleDateString('pt-BR')}
-                         </span>
-                    )}
-                </div>
-            </div>
-
-            {/* CONTADOR REGRESSIVO (Apenas se Edital Publicado) */}
-            {course.contestStatus === 'EDITAL_PUBLICADO' && daysRemaining > 0 && (
-                <div className="flex items-center gap-4 bg-black/40 p-3 pr-6 rounded-xl border border-white/10 z-10 shadow-lg w-full md:w-auto justify-between md:justify-start">
-                    <div className="text-right">
-                        <span className="text-4xl font-black text-white leading-none block tabular-nums tracking-tighter drop-shadow-md">{daysRemaining}</span>
-                        <span className="text-[9px] uppercase font-bold text-zinc-400 tracking-widest">Dias Restantes</span>
-                    </div>
-                    <div className="h-10 w-px bg-zinc-700/50"></div>
-                    <div className="text-center animate-bounce">
-                        <span className="text-3xl">🔥</span>
-                    </div>
-                </div>
-            )}
-             
-            {/* Elemento decorativo de fundo */}
-            <div className={`absolute -right-10 -top-10 w-40 h-40 bg-current opacity-10 rounded-full blur-3xl transition-all group-hover:opacity-20 pointer-events-none`}></div>
-        </div>
-    );
+  // Handler para Navegação via Review
+  const handleReviewNow = (topicId: string) => {
+      setActiveTab('EDITAL');
+      setFocusTopicId(topicId);
   };
 
   if (selectedModule) {
@@ -148,65 +76,88 @@ export function CourseDetails({ course, onBack }: CourseDetailsProps) {
   return (
     <div className="flex flex-col w-full animate-in fade-in pb-20 min-h-full">
       
-      {/* HEADER DO CURSO */}
-      <div className="flex flex-col gap-6 border-b border-gray-800 pb-6 px-1 md:px-0">
-        
-        {/* Topo: Botão Voltar e Títulos */}
-        <div className="flex items-start gap-4">
-            <button onClick={onBack} className="p-2 hover:bg-white/5 rounded-full text-zinc-400 hover:text-white transition-colors mt-1">
-                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
+      {/* ==================================================== */}
+      {/* HERO BANNER IMERSIVO (ESTILO NETFLIX - CORES REAIS)    */}
+      {/* ==================================================== */}
+      <div className="relative w-[calc(100%+3rem)] md:w-[calc(100%+4rem)] h-[60vh] min-h-[450px] md:h-[70vh] flex flex-col justify-end bg-[#0f1114] overflow-hidden -mt-6 -mx-6 md:-mt-8 md:-mx-8 mb-8 shadow-2xl border-b border-gray-800/50">
+         
+         {/* Botão Voltar (Absoluto) */}
+         <div className="absolute top-6 left-6 z-30">
+            <button onClick={onBack} className="p-3 bg-black/40 hover:bg-black/70 rounded-full text-white backdrop-blur-md transition-all border border-white/10 group">
+                <svg className="w-6 h-6 group-hover:-translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" /></svg>
             </button>
-            <div className="flex-1">
-                <span className="text-red-500 font-bold text-xs uppercase tracking-wider">{course.organization || 'CURSO ONLINE'}</span>
-                <h2 className="text-3xl md:text-4xl font-black text-white uppercase tracking-tight mt-1 leading-none">{course.title}</h2>
-            </div>
-        </div>
+         </div>
 
-        {renderStatusCard()}
+         {/* Background Responsivo (Sem Opacidade) */}
+         <div className="absolute inset-0">
+             <picture>
+                 {/* Se for tela média/grande, usa o banner desktop. Se não tiver, usa a capa normal */}
+                 <source media="(min-width: 768px)" srcSet={course.bannerUrlDesktop || course.coverUrl} />
+                 {/* Padrão para celular: usa o banner mobile ou a capa normal. Removido o opacity-60 */}
+                 <img src={course.bannerUrlMobile || course.coverUrl} alt="Banner do Curso" className="w-full h-full object-cover transition-opacity duration-1000" />
+             </picture>
 
-        {/* --- BARRA DE PROGRESSO GERAL --- */}
-        <div className="bg-[#121418] p-6 rounded-xl border border-zinc-800 flex items-center gap-6 max-w-3xl shadow-sm">
-            {/* Círculo ou Ícone */}
-            <div className="w-12 h-12 rounded-full bg-emerald-900/20 border border-emerald-500/30 flex items-center justify-center shrink-0">
-                <span className="text-emerald-500 font-black text-sm">{progress}%</span>
-            </div>
-            
-            {/* Barra */}
-            <div className="flex-1">
-                <div className="flex justify-between items-end mb-2">
-                    <span className="text-xs font-bold text-zinc-300 uppercase tracking-wider">Progresso do Curso</span>
-                    <span className="text-[10px] text-zinc-500 font-mono uppercase">Concluído</span>
-                </div>
-                <div className="w-full h-2 bg-black rounded-full overflow-hidden border border-zinc-800">
-                    <div 
-                        className="h-full bg-emerald-600 shadow-[0_0_15px_rgba(22,163,74,0.5)] transition-all duration-1000 ease-out relative" 
-                        style={{ width: `${progress}%` }} 
-                    >
-                        <div className="absolute right-0 top-0 bottom-0 w-[1px] bg-white/50 shadow-[0_0_10px_white]"></div>
+             {/* Degradê Suave apenas na parte inferior (para os botões não sumirem em fundos claros) */}
+             <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[#0f1114] via-[#0f1114]/60 to-transparent"></div>
+         </div>
+
+         {/* Conteúdo Sobreposto (Apenas a Barra Minimalista) */}
+         <div className="relative z-10 w-full px-6 md:px-12 pb-10 max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-8 duration-700">
+             
+             {/* BARRA DE AÇÕES MINIMALISTA */}
+             <div className="flex flex-col md:flex-row md:items-center gap-4 mt-auto">
+                 
+                 {/* Botão de Ação Principal */}
+                 <button className="flex items-center justify-center gap-2 bg-white hover:bg-gray-200 text-black px-8 py-3 rounded-lg font-black text-sm uppercase transition-transform hover:scale-105 shadow-[0_0_20px_rgba(255,255,255,0.3)] shrink-0">
+                     <PlayCircle size={20} fill="currentColor" />
+                     {progress > 0 ? 'CONTINUAR ESTUDOS' : 'INICIAR CURSO'}
+                 </button>
+
+                 <div className="flex items-center gap-4 flex-wrap">
+                    {/* Badge de Status do Concurso */}
+                    {course.contestStatus && course.contestStatus !== 'SEM_PREVISAO' && (
+                        <div className="flex items-center gap-2 px-4 py-3 bg-black/60 backdrop-blur-md border border-white/10 rounded-lg text-white font-bold text-xs uppercase shrink-0">
+                            <CheckCircle2 size={16} className="text-green-500" />
+                            Status: <span className="text-gray-300 ml-1">{CONTEST_STATUS_LABELS[course.contestStatus]}</span>
+                        </div>
+                    )}
+
+                    {/* Nova Barra de Progresso Linear */}
+                    <div className="flex-1 min-w-[200px] max-w-md flex items-center gap-4 bg-black/60 backdrop-blur-md border border-white/10 rounded-lg p-3 px-4">
+                        <span className="text-[10px] font-bold text-gray-400 uppercase hidden sm:block">Progresso</span>
+                        <div className="flex-1 bg-gray-900 rounded-full h-1.5 overflow-hidden">
+                            <div className="bg-red-600 h-full rounded-full transition-all duration-1000 ease-out" style={{ width: `${progress}%` }}></div>
+                        </div>
+                        <span className="text-sm font-black text-white">{progress}%</span>
                     </div>
-                </div>
-            </div>
-        </div>
+                 </div>
+             </div>
+         </div>
+      </div>
+
+      {/* DASHBOARD DE REVISÕES */}
+      <div className="px-1 md:px-0 mb-8">
+        <CourseReviewDashboard courseId={course.id} onReviewNow={handleReviewNow} />
       </div>
 
       {/* SISTEMA DE ABAS (NOVO) */}
-      <div className="flex items-center gap-6 border-b border-gray-800 px-1 md:px-0 mt-6 mb-6">
+      <div className="flex items-center gap-8 border-b border-gray-800 px-1 md:px-0 mb-8">
         <button 
             onClick={() => setActiveTab('MODULES')}
-            className={`flex items-center gap-2 pb-3 px-1 border-b-2 font-bold text-xs uppercase tracking-wider transition-all
+            className={`flex items-center gap-2 pb-4 px-1 border-b-2 font-bold text-xs uppercase tracking-widest transition-all
                 ${activeTab === 'MODULES' ? 'border-red-600 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}
             `}
         >
-            <LayoutList size={16} />
+            <LayoutList size={18} />
             Módulos do Curso
         </button>
         <button 
             onClick={() => setActiveTab('EDITAL')}
-            className={`flex items-center gap-2 pb-3 px-1 border-b-2 font-bold text-xs uppercase tracking-wider transition-all
+            className={`flex items-center gap-2 pb-4 px-1 border-b-2 font-bold text-xs uppercase tracking-widest transition-all
                 ${activeTab === 'EDITAL' ? 'border-red-600 text-white' : 'border-transparent text-gray-500 hover:text-gray-300'}
             `}
         >
-            <ListTree size={16} />
+            <ListTree size={18} />
             Edital Verticalizado
         </button>
       </div>
@@ -222,7 +173,7 @@ export function CourseDetails({ course, onBack }: CourseDetailsProps) {
               ) : modules.length === 0 ? (
                   <div className="text-zinc-500 italic px-1 text-sm border-l-2 border-zinc-800 pl-4 py-2">Nenhum módulo disponível neste curso.</div>
               ) : (
-                  <div className="flex gap-6 overflow-x-auto pb-8 scrollbar-thin scrollbar-thumb-brand-red scrollbar-track-transparent px-1">
+                  <div className="flex gap-6 overflow-x-auto pb-8 scrollbar-thin scrollbar-thumb-red-900 scrollbar-track-transparent px-1">
                       {modules.map(module => (
                           <StudentModuleCard 
                               key={module.id} 
@@ -234,7 +185,10 @@ export function CourseDetails({ course, onBack }: CourseDetailsProps) {
               )
           ) : (
               // VISÃO DO EDITAL VERTICALIZADO
-              <StudentCourseEdital courseId={course.id} />
+              <StudentCourseEdital 
+                courseId={course.id} 
+                focusTopicId={focusTopicId} 
+              />
           )}
       </div>
     </div>

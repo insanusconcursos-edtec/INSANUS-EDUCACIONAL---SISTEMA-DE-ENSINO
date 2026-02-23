@@ -1,3 +1,4 @@
+
 import { db, storage } from './firebase';
 import { 
   collection, 
@@ -30,11 +31,41 @@ const CONTENTS_COLLECTION = 'course_contents';
 const EDITAL_COLLECTION = 'course_edital'; 
 
 export const courseService = {
-  // Criar novo curso
-  createCourse: async (data: CourseFormData): Promise<string> => {
+  // Helper para upload de Banner
+  uploadBanner: async (file: File): Promise<string> => {
     try {
+      const storageRef = ref(storage, `course_banners/${Date.now()}_${file.name}`);
+      const snapshot = await uploadBytes(storageRef, file);
+      return await getDownloadURL(snapshot.ref);
+    } catch (error) {
+      console.error("Erro upload banner:", error);
+      throw error;
+    }
+  },
+
+  // Criar novo curso
+  createCourse: async (data: CourseFormData, bannerDesktopFile?: File, bannerMobileFile?: File): Promise<string> => {
+    try {
+      const finalData: any = { ...data };
+
+      if (bannerDesktopFile) {
+        finalData.bannerUrlDesktop = await courseService.uploadBanner(bannerDesktopFile);
+      }
+      if (bannerMobileFile) {
+        finalData.bannerUrlMobile = await courseService.uploadBanner(bannerMobileFile);
+      }
+
+      // =======================================================================
+      // LIMPEZA CIRÚRGICA: Remove qualquer campo 'undefined' antes de salvar
+      // =======================================================================
+      Object.keys(finalData).forEach(key => {
+        if (finalData[key] === undefined) {
+          delete finalData[key];
+        }
+      });
+
       const docRef = await addDoc(collection(db, COLLECTION_NAME), {
-        ...data,
+        ...finalData,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         active: true
@@ -62,11 +93,29 @@ export const courseService = {
   },
 
   // Atualizar curso
-  updateCourse: async (id: string, data: Partial<CourseFormData>) => {
+  updateCourse: async (id: string, data: Partial<CourseFormData>, bannerDesktopFile?: File, bannerMobileFile?: File) => {
     try {
+      const finalData: any = { ...data };
+
+      if (bannerDesktopFile) {
+        finalData.bannerUrlDesktop = await courseService.uploadBanner(bannerDesktopFile);
+      }
+      if (bannerMobileFile) {
+        finalData.bannerUrlMobile = await courseService.uploadBanner(bannerMobileFile);
+      }
+
+      // =======================================================================
+      // LIMPEZA CIRÚRGICA: Remove qualquer campo 'undefined' antes de salvar
+      // =======================================================================
+      Object.keys(finalData).forEach(key => {
+        if (finalData[key] === undefined) {
+          delete finalData[key];
+        }
+      });
+
       const docRef = doc(db, COLLECTION_NAME, id);
       await updateDoc(docRef, {
-        ...data,
+        ...finalData,
         updatedAt: new Date().toISOString()
       });
     } catch (error) {
@@ -88,9 +137,12 @@ export const courseService = {
   // Duplicar curso
   duplicateCourse: async (originalCourse: OnlineCourse) => {
     try {
-      const newCourseData = {
+      // Garantir que não passamos undefined na duplicação também
+      const newCourseData: any = {
         title: `${originalCourse.title} (Cópia)`,
         coverUrl: originalCourse.coverUrl,
+        bannerUrlDesktop: originalCourse.bannerUrlDesktop || null,
+        bannerUrlMobile: originalCourse.bannerUrlMobile || null,
         categoryId: originalCourse.categoryId,
         subcategoryId: originalCourse.subcategoryId || '',
         organization: originalCourse.organization || '',
@@ -98,6 +150,11 @@ export const courseService = {
         updatedAt: new Date().toISOString(),
         active: true
       };
+
+      // Limpeza de segurança
+      Object.keys(newCourseData).forEach(key => {
+        if (newCourseData[key] === undefined) delete newCourseData[key];
+      });
 
       const docRef = await addDoc(collection(db, COLLECTION_NAME), newCourseData);
       return docRef.id;

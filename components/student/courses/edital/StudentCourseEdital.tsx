@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   ChevronRight, ChevronDown, CheckCircle2, PlayCircle, FileText, 
-  BrainCircuit, Layers, StickyNote, X, BookOpen, Loader2, CalendarClock, RotateCw
+  BrainCircuit, Layers, StickyNote, X, BookOpen, Loader2, CalendarClock
 } from 'lucide-react';
 import { useAuth } from '../../../../contexts/AuthContext';
 import { courseService } from '../../../../services/courseService';
@@ -12,6 +12,7 @@ import { openWatermarkedPdf } from '../../../../utils/pdfSecurityService';
 import { ConfirmationModal } from '../../../../components/ui/ConfirmationModal';
 import MindMapFullscreen from '../../../../components/admin/metas/tools/mindmap/MindMapFullscreen';
 import FlashcardFullscreenEditor from '../../../../components/admin/metas/tools/FlashcardFullscreenEditor';
+import FlashcardPlayerModal from '../../FlashcardPlayerModal';
 import { CourseEditalStructure } from '../../../../types/courseEdital';
 
 // IMPORTAÇÕES DO SISTEMA DE REVISÃO
@@ -28,11 +29,46 @@ const formatShortDate = (dateStr: string) => {
 // ==========================================
 // 1. ACORDEÃO DO TÓPICO (AUTOSSUFICIENTE)
 // ==========================================
-function StudentTopicAccordion({ topic, courseId, disciplineId, completedLessons, completedTopics, onToggleTopic }: any) {
-  const [isOpen, setIsOpen] = useState(false);
+function StudentTopicAccordion({ topic, courseId, disciplineId, disciplineName, completedLessons, completedTopics, onToggleTopic, focusTopicId }: any) {
+  
+  // NOVA LÓGICA: Verifica se ESTE é o tópico exato que deve piscar
+  const isFocused = String(topic.id) === String(focusTopicId);
+
+  // NOVA LÓGICA: Verifica se algum FILHO deste tópico é o foco (para abrir recursivamente)
+  const hasFocusedChild = useMemo(() => {
+    if (!focusTopicId) return false;
+    const check = (subtopics: any[]): boolean => {
+        if (!subtopics) return false;
+        for (const t of subtopics) {
+            if (String(t.id) === String(focusTopicId)) return true;
+            if (t.subtopics && check(t.subtopics)) return true;
+        }
+        return false;
+    };
+    return check(topic.subtopics);
+  }, [topic.subtopics, focusTopicId]);
+
+  // Se for o foco ou tiver filho focado, inicia aberto
+  const [isOpen, setIsOpen] = useState(isFocused || hasFocusedChild);
+  
   const [isLessonsOpen, setIsLessonsOpen] = useState(false);
   const { currentUser: user, userData } = useAuth(); 
   
+  // Ref para Auto-Scroll
+  const topicRef = useRef<HTMLDivElement>(null);
+  
+  // Efeito de rolagem automática e expansão
+  useEffect(() => {
+      if (isFocused || hasFocusedChild) {
+          setIsOpen(true);
+          if (isFocused) {
+              setTimeout(() => {
+                  topicRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }, 300); // Aguarda a montagem do acordeão
+          }
+      }
+  }, [isFocused, hasFocusedChild]);
+
   // ESTADO INTERNO DE CONFIRMAÇÃO E REVISÃO
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
@@ -40,18 +76,22 @@ function StudentTopicAccordion({ topic, courseId, disciplineId, completedLessons
   // ESTADO PARA ARMAZENAR REVISÕES DESTE TÓPICO
   const [topicReviews, setTopicReviews] = useState<CourseReview[]>([]);
 
-  // CÁLCULO DIRETO DO STATUS (A fonte da verdade é a lista mestra 'completedTopics')
+  // CÁLCULO DIRETO DO STATUS
   const isCompleted = completedTopics?.includes(String(topic.id)) || false;
 
   const [activeLesson, setActiveLesson] = useState<any | null>(null);
   const [openingPdfId, setOpeningPdfId] = useState<string | null>(null);
   const [isLoadingVideo, setIsLoadingVideo] = useState(false);
 
-  // Estados do Aluno (Criação Manual)
+  // Estados do Aluno (Criação Manual e Visualização)
   const [studentContent, setStudentContent] = useState<any>({ mindmap: null, flashcards: null });
   const [isStudentMindMapOpen, setIsStudentMindMapOpen] = useState(false);
   const [isStudentFlashcardsOpen, setIsStudentFlashcardsOpen] = useState(false);
   const [isProcessingStudent, setIsProcessingStudent] = useState(false);
+
+  // --- NOVOS ESTADOS: CHAVEAMENTO DE CONTEXTO ---
+  const [mapMode, setMapMode] = useState<'STUDENT' | 'TEACHER'>('STUDENT');
+  const [flashcardMode, setFlashcardMode] = useState<'STUDENT' | 'TEACHER'>('STUDENT');
 
   // Carregar conteúdo do aluno
   useEffect(() => {
@@ -182,18 +222,38 @@ function StudentTopicAccordion({ topic, courseId, disciplineId, completedLessons
   };
 
   const onOpenEditor = (type: 'MAP' | 'FLASHCARD', t: any, forceStudentMode: boolean = false) => {
-    if (!forceStudentMode) {
-      if (type === 'MAP' && t.contentData?.mindMap?.length) { 
-          alert("Visualização do Professor em desenvolvimento."); 
-          return; 
-      }
-      if (type === 'FLASHCARD' && t.contentData?.flashcards?.length) { 
-          alert("Visualização do Professor em desenvolvimento."); 
-          return; 
-      }
+    // 1. Definição do Modo
+    const mode = forceStudentMode ? 'STUDENT' : 'TEACHER';
+    
+    if (type === 'MAP') {
+        setMapMode(mode);
+        // Se for professor, verifica se tem conteúdo
+        if (mode === 'TEACHER' && !t.contentData?.mindMap?.length && !t.mindMap) {
+            alert("O professor não disponibilizou um mapa mental para este tópico.");
+            return;
+        }
+        
+        if (mode === 'TEACHER') {
+             setIsStudentMindMapOpen(true); // Reutiliza o modal existente
+        } else {
+             handleStudentMindMap();
+        }
     }
-    if (type === 'MAP') handleStudentMindMap();
-    if (type === 'FLASHCARD') handleStudentFlashcards();
+    
+    if (type === 'FLASHCARD') {
+        setFlashcardMode(mode);
+        // Se for professor, verifica se tem conteúdo
+        if (mode === 'TEACHER' && !t.contentData?.flashcards?.length && !t.flashcards) {
+            alert("O professor não disponibilizou flashcards para este tópico.");
+            return;
+        }
+
+        if (mode === 'TEACHER') {
+             setIsStudentFlashcardsOpen(true); // Reutiliza o modal existente
+        } else {
+             handleStudentFlashcards();
+        }
+    }
   };
 
   // --- FUNÇÃO PARA SALVAR A CONFIGURAÇÃO DE REVISÃO ESPAÇADA ---
@@ -204,6 +264,7 @@ function StudentTopicAccordion({ topic, courseId, disciplineId, completedLessons
             user.uid,
             courseId,
             disciplineId,
+            disciplineName, // <-- ENVIANDO O NOME PARA O BANCO DE DADOS
             String(topic.id),
             topic.name,
             intervals,
@@ -238,11 +299,19 @@ function StudentTopicAccordion({ topic, courseId, disciplineId, completedLessons
 
   return (
     <>
-      <div className={`bg-[#121418] border rounded-lg overflow-hidden transition-colors ${isCompleted ? 'border-green-900/40' : 'border-gray-800'}`}>
+      <div 
+        ref={topicRef}
+        className={`bg-[#121418] border rounded-lg overflow-hidden transition-all duration-700
+          ${isCompleted ? 'border-green-900/40' : 'border-gray-800'}
+          ${isFocused ? 'ring-2 ring-yellow-500 shadow-[0_0_20px_rgba(234,179,8,0.4)]' : ''}
+        `}
+      >
         
         {/* CABEÇALHO DO TÓPICO COM CHECKBOX */}
         <div 
-          className="flex flex-col p-3 hover:bg-[#1a1d24] transition-colors cursor-pointer select-none group" 
+          className={`flex flex-col p-3 transition-colors cursor-pointer select-none group
+             ${isFocused ? 'bg-yellow-900/10' : 'hover:bg-[#1a1d24]'}
+          `} 
           onClick={() => setIsOpen(!isOpen)}
         >
           <div className="flex items-center justify-between w-full">
@@ -261,7 +330,7 @@ function StudentTopicAccordion({ topic, courseId, disciplineId, completedLessons
                     <CheckCircle2 size={18} />
                 </button>
 
-                <h4 className={`font-bold text-xs uppercase transition-colors ${isCompleted ? 'text-gray-400 line-through decoration-green-900/50' : 'text-gray-200'}`}>
+                <h4 className={`font-bold text-xs uppercase transition-colors ${isCompleted ? 'text-gray-400 line-through decoration-green-900/50' : isFocused ? 'text-yellow-500' : 'text-gray-200'}`}>
                     {topic.name}
                 </h4>
             </div>
@@ -409,10 +478,12 @@ function StudentTopicAccordion({ topic, courseId, disciplineId, completedLessons
                        key={sub.id} 
                        topic={sub} 
                        courseId={courseId}
-                       disciplineId={disciplineId} // PROPAGANDO DISCIPLINE ID
+                       disciplineId={disciplineId}
+                       disciplineName={disciplineName} // <-- REPASSANDO PARA OS SUBTÓPICOS
                        completedLessons={completedLessons}
-                       completedTopics={completedTopics} // REPASSA A LISTA MESTRA
-                       onToggleTopic={onToggleTopic}     // REPASSA A FUNÇÃO INTELIGENTE
+                       completedTopics={completedTopics} 
+                       onToggleTopic={onToggleTopic}
+                       focusTopicId={focusTopicId}
                     />
                   ))}
               </div>
@@ -440,22 +511,52 @@ function StudentTopicAccordion({ topic, courseId, disciplineId, completedLessons
       {isStudentMindMapOpen && createPortal(
         <div className="fixed inset-0 z-[9999] bg-[#0f1114]">
             <MindMapFullscreen 
-                title={`Meu Mapa: ${topic.name}`} 
-                initialData={studentContent.mindmap?.data || []} 
-                onChange={handleSaveStudentMindMap} 
+                nodes={mapMode === 'TEACHER' 
+                    ? (topic.contentData?.mindMap || topic.mindMap || []) 
+                    : (studentContent.mindmap?.data && studentContent.mindmap?.data.length > 0
+                        ? studentContent.mindmap.data 
+                        : [{ 
+                            id: 'root', 
+                            type: 'root', 
+                            x: 0, 
+                            y: 0, 
+                            label: topic.name || 'Meu Mapa', 
+                            color: '#a855f7' 
+                          }]
+                      )
+                } 
+                onChange={mapMode === 'TEACHER' ? () => {} : handleSaveStudentMindMap} 
                 onClose={() => setIsStudentMindMapOpen(false)} 
+                readOnly={mapMode === 'TEACHER'}
             />
         </div>, document.body
       )}
 
-      {isStudentFlashcardsOpen && createPortal(
+      {/* ==================================================== */}
+      {/* MODAL DE FLASHCARDS (MODO PROFESSOR - PLAYER NATIVO) */}
+      {/* ==================================================== */}
+      {isStudentFlashcardsOpen && flashcardMode === 'TEACHER' && (
+          <FlashcardPlayerModal 
+              isOpen={true} // Mandatory for the portal inside the component to mount
+              title={`Cards do Professor: ${topic.name}`}
+              flashcards={topic.contentData?.flashcards || topic.flashcards || []}
+              onClose={() => setIsStudentFlashcardsOpen(false)}
+              timerState={{ status: 'idle', formattedTime: '00:00' }} // Required prop
+              accentColor="#ec4899" // Added for consistency
+          />
+      )}
+
+      {/* ==================================================== */}
+      {/* MODAL DE FLASHCARDS (MODO ALUNO - EDITOR COMPLETO)   */}
+      {/* ==================================================== */}
+      {isStudentFlashcardsOpen && flashcardMode === 'STUDENT' && createPortal(
         <div className="fixed inset-0 z-[9999] bg-[#0f1114]">
             <FlashcardFullscreenEditor 
-                title={`Meus Cards: ${topic.name}`} 
-                initialData={studentContent.flashcards?.data || []} 
+                cards={studentContent.flashcards?.data || []} // Mapped from user's "initialData" intent to actual prop
                 onChange={handleSaveStudentFlashcards} 
                 onClose={() => setIsStudentFlashcardsOpen(false)} 
-                manualOnly={true} 
+                manualOnly={true}
+                accentColor="#ec4899" // Added for consistency
             />
         </div>, document.body
       )}
@@ -502,12 +603,30 @@ function StudentTopicAccordion({ topic, courseId, disciplineId, completedLessons
 // ==========================================
 // 2. DISCIPLINAS (WRAPPER)
 // ==========================================
-// Este componente apenas itera sobre os tópicos e repassa a lista mestra
-function StudentDisciplineAccordion({ discipline, courseId, completedLessons, completedTopics, onToggleTopic }: any) {
-    const [isOpen, setIsOpen] = useState(false);
+function StudentDisciplineAccordion({ discipline, courseId, completedLessons, completedTopics, onToggleTopic, focusTopicId }: any) {
+    // NOVA LÓGICA: Verifica se o tópico focado está escondido dentro desta disciplina
+    const hasFocusedTopic = useMemo(() => {
+      if (!focusTopicId) return false;
+      const check = (topics: any[]): boolean => {
+          if (!topics) return false;
+          for (const t of topics) {
+              if (String(t.id) === String(focusTopicId)) return true;
+              if (t.subtopics && check(t.subtopics)) return true;
+          }
+          return false;
+      };
+      return check(discipline.topics);
+    }, [discipline, focusTopicId]);
+
+    // Se tiver, o estado inicial de isOpen será true
+    const [isOpen, setIsOpen] = useState(hasFocusedTopic);
+    
+    // Monitora mudanças para abrir automaticamente
+    useEffect(() => {
+        if (hasFocusedTopic) setIsOpen(true);
+    }, [hasFocusedTopic]);
   
     // --- CÁLCULO RECURSIVO DA BARRA DE PROGRESSO DA DISCIPLINA ---
-    // Conta quantos tópicos existem na árvore
     const countDisciplineTopics = (topics: any[]): number => {
         let count = 0;
         topics.forEach(t => {
@@ -517,7 +636,6 @@ function StudentDisciplineAccordion({ discipline, courseId, completedLessons, co
         return count;
     };
   
-    // Conta quantos tópicos estão na lista 'completedTopics'
     const countDisciplineCompleted = (topics: any[]): number => {
         let count = 0;
         topics.forEach(t => {
@@ -543,7 +661,6 @@ function StudentDisciplineAccordion({ discipline, courseId, completedLessons, co
             <h3 className="text-white font-black text-sm uppercase">{discipline.name}</h3>
           </div>
           
-          {/* Barra Individual e Badge alinhados à direita */}
           <div className="flex items-center gap-4 ml-7 sm:ml-0">
               <div className="flex flex-col items-end hidden sm:flex w-32">
                   <span className="text-[9px] font-bold text-gray-500 uppercase">{discProgress}% Concluído</span>
@@ -557,7 +674,7 @@ function StudentDisciplineAccordion({ discipline, courseId, completedLessons, co
           </div>
         </div>
   
-        {/* Progress Bar Mobile (Aparece embaixo no celular) */}
+        {/* Progress Bar Mobile */}
         <div className="sm:hidden w-full bg-black h-1">
            <div className="bg-green-500 h-full transition-all duration-500" style={{ width: `${discProgress}%` }}></div>
         </div>
@@ -570,10 +687,12 @@ function StudentDisciplineAccordion({ discipline, courseId, completedLessons, co
                    key={topic.id} 
                    topic={topic} 
                    courseId={courseId}
-                   disciplineId={discipline.id} // PASSANDO O ID DA DISCIPLINA
+                   disciplineId={discipline.id} 
+                   disciplineName={discipline.name} // <-- CAPTURANDO E ENVIANDO O NOME
                    completedLessons={completedLessons}
-                   completedTopics={completedTopics} // REPASSA A LISTA MESTRA
-                   onToggleTopic={onToggleTopic}     // REPASSA A FUNÇÃO INTELIGENTE
+                   completedTopics={completedTopics}
+                   onToggleTopic={onToggleTopic}
+                   focusTopicId={focusTopicId}
                 />
               ))}
             </div>
@@ -586,7 +705,7 @@ function StudentDisciplineAccordion({ discipline, courseId, completedLessons, co
 // ==========================================
 // 3. COMPONENTE PRINCIPAL (MANAGER)
 // ==========================================
-export function StudentCourseEdital({ courseId }: { courseId: string }) {
+export function StudentCourseEdital({ courseId, focusTopicId }: { courseId: string, focusTopicId?: string | null }) {
     const { currentUser: user } = useAuth();
     const [structure, setStructure] = useState<CourseEditalStructure | null>(null);
     const [loading, setLoading] = useState(true);
@@ -653,7 +772,7 @@ export function StudentCourseEdital({ courseId }: { courseId: string }) {
         );
     }
     
-    // --- CÁLCULO DA BARRA DE PROGRESSO GERAL (RECURSIVO CORRETO) ---
+    // --- CÁLCULO DA BARRA DE PROGRESSO GERAL ---
     const countTotalTopics = (items: any[]): number => {
         let count = 0;
         items.forEach(item => {
@@ -677,7 +796,7 @@ export function StudentCourseEdital({ courseId }: { courseId: string }) {
                     <p className="text-gray-500 text-sm font-medium mt-1">Acompanhe seu progresso tópico por tópico.</p>
                 </div>
                 
-                {/* BARRA DE PROGRESSO GERAL (Injeção Visão do Todo) */}
+                {/* BARRA DE PROGRESSO GERAL */}
                 <div className="bg-[#1a1d24] border border-gray-800 rounded-xl p-3 flex flex-col gap-1 w-full md:w-64">
                     <div className="flex justify-between items-center">
                         <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block">Progresso Geral</span>
@@ -697,8 +816,9 @@ export function StudentCourseEdital({ courseId }: { courseId: string }) {
                         discipline={discipline} 
                         courseId={courseId}
                         completedLessons={completedLessons}
-                        completedTopics={completedTopics} // REPASSA A LISTA MESTRA
+                        completedTopics={completedTopics} 
                         onToggleTopic={handleToggleTopic}
+                        focusTopicId={focusTopicId} // PASSANDO O ID DE FOCO PARA BAIXO
                     />
                 ))}
             </div>

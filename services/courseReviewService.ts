@@ -18,28 +18,27 @@ export interface CourseReview {
   userId: string;
   courseId: string;
   disciplineId: string;
+  disciplineName: string; // <-- GARANTINDO QUE A INTERFACE ACEITA O NOME
   topicId: string;
   topicName: string;
-  scheduledDate: string; // Formato YYYY-MM-DD
+  scheduledDate: string; 
   status: 'pending' | 'completed' | 'missed';
   reviewIndex: number;
   intervalDays: number;
   label: string;
   isLastOfCycle: boolean;
   repeatInterval: number | null;
-  createdAt: any; // Timestamp
+  createdAt: Timestamp;
   completedAt?: any; // Timestamp
 }
 
 export const courseReviewService = {
-  /**
-   * 1. Agenda as revisões com base nos intervalos
-   * Calcula as datas de forma cumulativa (Data Rev 2 = Data Rev 1 + Intervalo 2)
-   */
+  // 1. Agenda as revisões com base nos intervalos
   scheduleReviews: async (
     userId: string, 
     courseId: string, 
     disciplineId: string, 
+    disciplineName: string, // <-- ADICIONADO AQUI
     topicId: string, 
     topicName: string, 
     intervals: number[], 
@@ -48,24 +47,22 @@ export const courseReviewService = {
     const batch = writeBatch(db);
     const reviewsRef = collection(db, 'users', userId, 'course_reviews');
 
-    // Começa a contar a partir de "Hoje"
-    let currentDateCalculation = new Date();
+    let currentDate = new Date();
 
     intervals.forEach((interval, index) => {
-      // Lógica de Acumulação: A próxima revisão é X dias APÓS a anterior
-      currentDateCalculation.setDate(currentDateCalculation.getDate() + interval);
+      currentDate = new Date(currentDate.getTime());
+      currentDate.setDate(currentDate.getDate() + interval);
       
-      // Usa helper para garantir string YYYY-MM-DD correta no fuso local
-      const scheduledDateStr = getLocalISODate(currentDateCalculation);
-      
+      const scheduledDateStr = currentDate.toISOString().split('T')[0];
       const isLast = index === intervals.length - 1;
-      const newReviewRef = doc(reviewsRef); // Gera ID automaticamente
+      const newReviewRef = doc(reviewsRef);
 
       const reviewData: CourseReview = {
         id: newReviewRef.id,
         userId,
         courseId,
         disciplineId,
+        disciplineName, // <-- SALVANDO O NOME NO BANCO DE DADOS
         topicId,
         topicName,
         scheduledDate: scheduledDateStr,

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { courseService } from '../../../services/courseService';
 import { getCategories, Category } from '../../../services/planService';
@@ -73,11 +74,11 @@ export function AdminCoursesTab() {
   }, [searchTerm, selectedCategory, selectedSubcategory, courses]);
 
   // Handlers CRUD
-  const handleSaveCourse = async (data: CourseFormData) => {
+  const handleSaveCourse = async (data: CourseFormData, bannerDesktopFile?: File, bannerMobileFile?: File) => {
     if (editingCourse) {
-      await courseService.updateCourse(editingCourse.id, data);
+      await courseService.updateCourse(editingCourse.id, data, bannerDesktopFile, bannerMobileFile);
     } else {
-      await courseService.createCourse(data);
+      await courseService.createCourse(data, bannerDesktopFile, bannerMobileFile);
     }
     await loadData();
     setEditingCourse(null);

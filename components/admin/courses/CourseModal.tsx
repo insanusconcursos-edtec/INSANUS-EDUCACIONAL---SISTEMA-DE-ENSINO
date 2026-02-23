@@ -8,7 +8,7 @@ import { OnlineCourse, CourseFormData, ContestStatus, CONTEST_STATUS_LABELS } fr
 interface CourseModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (data: CourseFormData) => Promise<void>;
+  onSave: (data: CourseFormData, bannerDesktopFile?: File, bannerMobileFile?: File) => Promise<void>;
   initialData?: OnlineCourse | null;
 }
 
@@ -32,6 +32,10 @@ export function CourseModal({ isOpen, onClose, onSave, initialData }: CourseModa
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Estados para Banners (Netflix Style)
+  const [bannerDesktopFile, setBannerDesktopFile] = useState<File | null>(null);
+  const [bannerMobileFile, setBannerMobileFile] = useState<File | null>(null);
 
   // Carregar categorias
   useEffect(() => {
@@ -58,7 +62,9 @@ export function CourseModal({ isOpen, onClose, onSave, initialData }: CourseModa
         organization: initialData.organization || '',
         contestStatus: initialData.contestStatus || 'SEM_PREVISAO',
         examBoard: initialData.examBoard || '',
-        examDate: initialData.examDate || ''
+        examDate: initialData.examDate || '',
+        bannerUrlDesktop: initialData.bannerUrlDesktop,
+        bannerUrlMobile: initialData.bannerUrlMobile,
       });
       setPreviewUrl(initialData.coverUrl); // Mostra a capa atual
     } else {
@@ -77,6 +83,9 @@ export function CourseModal({ isOpen, onClose, onSave, initialData }: CourseModa
       setPreviewUrl('');
       setSelectedFile(null);
     }
+    // Reset banner files on open/change
+    setBannerDesktopFile(null);
+    setBannerMobileFile(null);
   }, [initialData, isOpen]);
 
   // Handler de Seleção de Arquivo
@@ -120,10 +129,11 @@ export function CourseModal({ isOpen, onClose, onSave, initialData }: CourseModa
       }
 
       // Salva os dados do curso com a URL da imagem (nova ou antiga)
+      // Passa os arquivos de banner para o componente pai (AdminCoursesTab -> courseService)
       await onSave({
         ...finalData,
         coverUrl: finalCoverUrl
-      });
+      }, bannerDesktopFile || undefined, bannerMobileFile || undefined);
       
       onClose();
     } catch (error) {
@@ -324,6 +334,42 @@ export function CourseModal({ isOpen, onClose, onSave, initialData }: CourseModa
                         </div>
                     </div>
                 )}
+            </div>
+          </div>
+
+          {/* NOVA SEÇÃO: BANNERS (Estilo Netflix) */}
+          <div className="border-t border-gray-800 pt-4 mt-2">
+            <h3 className="text-sm font-bold text-gray-400 uppercase mb-4">Personalização Visual (Banners)</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Upload Banner Desktop */}
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Banner Horizontal (PC/TV)</label>
+                    <input 
+                        type="file" 
+                        accept="image/*"
+                        onChange={(e) => setBannerDesktopFile(e.target.files?.[0] || null)}
+                        className="w-full bg-black border border-gray-800 rounded-lg p-2 text-white text-xs"
+                    />
+                    <p className="text-[10px] text-gray-600 mt-1">Proporção ideal: 1920x1080px (16:9)</p>
+                    {formData.bannerUrlDesktop && !bannerDesktopFile && (
+                         <p className="text-[10px] text-green-500 mt-1">Imagem atual já cadastrada.</p>
+                    )}
+                </div>
+
+                {/* Upload Banner Mobile */}
+                <div>
+                    <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Banner Vertical (Celular)</label>
+                    <input 
+                        type="file" 
+                        accept="image/*"
+                        onChange={(e) => setBannerMobileFile(e.target.files?.[0] || null)}
+                        className="w-full bg-black border border-gray-800 rounded-lg p-2 text-white text-xs"
+                    />
+                    <p className="text-[10px] text-gray-600 mt-1">Proporção ideal: 1080x1350px (4:5)</p>
+                     {formData.bannerUrlMobile && !bannerMobileFile && (
+                         <p className="text-[10px] text-green-500 mt-1">Imagem atual já cadastrada.</p>
+                    )}
+                </div>
             </div>
           </div>
 

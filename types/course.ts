@@ -21,6 +21,11 @@ export interface OnlineCourse {
   title: string;
   description?: string; // Novo campo
   coverUrl: string;
+  
+  // Banner (Netflix Style)
+  bannerUrlDesktop?: string;
+  bannerUrlMobile?: string;
+
   categoryId: string;
   subcategoryId?: string;
   organization?: string;
@@ -78,6 +83,11 @@ export interface CourseFormData {
   title: string;
   description?: string;
   coverUrl: string;
+  
+  // Banner (Netflix Style)
+  bannerUrlDesktop?: string;
+  bannerUrlMobile?: string;
+
   categoryId: string;
   subcategoryId: string;
   organization: string;
