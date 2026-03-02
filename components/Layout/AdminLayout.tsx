@@ -22,22 +22,27 @@ const AdminLayout: React.FC = () => {
         items.push({ label: 'CURSOS ONLINE', path: '/admin/cursos' });
     }
 
-    // 3. ALUNOS
+    // 3. TURMAS PRESENCIAIS (Novo)
+    if (isAdmin) {
+        items.push({ label: 'TURMAS PRESENCIAIS', path: '/admin/presencial' });
+    }
+
+    // 4. ALUNOS
     if (isAdmin || perms.students) {
         items.push({ label: 'ALUNOS', path: '/admin/alunos' });
     }
 
-    // 4. SIMULADOS
+    // 5. SIMULADOS
     if (isAdmin || perms.simulated) {
         items.push({ label: 'SIMULADOS', path: '/admin/simulados' });
     }
 
-    // 5. EQUIPE
+    // 6. EQUIPE
     if (isAdmin || perms.team) {
         items.push({ label: 'EQUIPE', path: '/admin/equipe' });
     }
 
-    // 6. MANUTENÇÃO (Admin Only)
+    // 7. MANUTENÇÃO (Admin Only)
     if (isAdmin) {
         items.push({ label: 'MANUTENÇÃO', path: '/admin/manutencao' });
     }
