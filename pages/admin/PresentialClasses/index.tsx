@@ -1,21 +1,8 @@
 import React, { useState } from 'react';
 import { Users, GraduationCap, MapPin } from 'lucide-react';
 import { TeacherList } from '../../../components/admin/presential/teachers/TeacherList';
-
-// Placeholder components for tabs
-const ClassesTab = () => (
-  <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-    <h2 className="text-xl font-bold text-white mb-4">Gestão de Turmas</h2>
-    <p className="text-zinc-400">Em breve: Criação e gerenciamento de turmas presenciais.</p>
-  </div>
-);
-
-const ClassroomsTab = () => (
-  <div className="p-6 bg-zinc-900/50 border border-zinc-800 rounded-xl">
-    <h2 className="text-xl font-bold text-white mb-4">Gestão de Salas</h2>
-    <p className="text-zinc-400">Em breve: Cadastro de salas e polos.</p>
-  </div>
-);
+import { ClassroomList } from '../../../components/admin/presential/classrooms/ClassroomList';
+import { ClassList } from '../../../components/admin/presential/classes/ClassList';
 
 type TabType = 'TEACHERS' | 'CLASSES' | 'CLASSROOMS';
 
@@ -76,8 +63,8 @@ const PresentialClassesPage: React.FC = () => {
       {/* Tab Content */}
       <div className="min-h-[400px]">
         {activeTab === 'TEACHERS' && <TeacherList />}
-        {activeTab === 'CLASSES' && <ClassesTab />}
-        {activeTab === 'CLASSROOMS' && <ClassroomsTab />}
+        {activeTab === 'CLASSES' && <ClassList />}
+        {activeTab === 'CLASSROOMS' && <ClassroomList />}
       </div>
     </div>
   );
