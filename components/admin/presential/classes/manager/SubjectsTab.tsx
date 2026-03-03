@@ -1,0 +1,1068 @@
+import React, { useState, useEffect } from 'react';
+import { Plus, Trash2, Edit2, ChevronDown, ChevronUp, AlertTriangle, BookOpen, User, CheckSquare, Square, Save } from 'lucide-react';
+import { Class } from '../../../../../types/class';
+import { Subject, Topic, Module } from '../../../../../types/curriculum';
+import { Teacher } from '../../../../../types/teacher';
+import { curriculumService } from '../../../../../services/curriculumService';
+import { teacherService } from '../../../../../services/teacherService';
+
+interface SubjectsTabProps {
+  cls: Class;
+}
+
+export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newSubject, setNewSubject] = useState({ name: '', color: '#EF4444', defaultTeacherId: '' });
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [subjectDeleteModal, setSubjectDeleteModal] = useState<{ isOpen: boolean, subjectId: string | null }>({ isOpen: false, subjectId: null });
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [expandedSubjects, setExpandedSubjects] = useState<string[]>([]);
+  const [isTopicModalOpen, setIsTopicModalOpen] = useState(false);
+  const [editingTopic, setEditingTopic] = useState<Topic | null>(null);
+  const [topicDeleteModal, setTopicDeleteModal] = useState<{ isOpen: boolean, topicId: string | null }>({ isOpen: false, topicId: null });
+  const [selectedSubjectId, setSelectedSubjectId] = useState<string | null>(null);
+  const [newTopic, setNewTopic] = useState({ name: '', requiredClasses: 0 });
+  const [isModuleModalOpen, setIsModuleModalOpen] = useState(false);
+  const [editingModule, setEditingModule] = useState<Module | null>(null);
+  const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
+  const [moduleDeleteModal, setModuleDeleteModal] = useState<{ isOpen: boolean, topicId: string | null, moduleId: string | null }>({ isOpen: false, topicId: null, moduleId: null });
+  const [newModule, setNewModule] = useState({ name: '', classesCount: 1 });
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncSuccess, setSyncSuccess] = useState(false);
+
+  // Fetch Data
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const [subjectsData, topicsData, teachersData] = await Promise.all([
+        curriculumService.getSubjectsByClass(cls.id),
+        curriculumService.getTopicsByClass(cls.id),
+        teacherService.getTeachers()
+      ]);
+      setSubjects(subjectsData);
+      setTopics(topicsData);
+      setTeachers(teachersData);
+    } catch (error) {
+      console.error("Error fetching data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchData();
+  }, [cls.id]);
+
+  // Calculations
+  const totalSelectedClasses = topics
+    .filter(t => t.isSelected)
+    .reduce((acc, topic) => {
+      const topicClasses = topic.modules?.reduce((sum, mod) => sum + mod.classesCount, 0) || 0;
+      return acc + topicClasses;
+    }, 0);
+
+  const meetingsConsumed = Math.ceil(totalSelectedClasses / (cls.classesPerMeeting || 1));
+  const meetingsBalance = cls.totalMeetings - meetingsConsumed;
+  const isOverLimit = meetingsBalance < 0;
+
+  // Handlers
+  const handleSaveSubject = async () => {
+    if (!newSubject.name) return;
+    try {
+      if (editingSubject) {
+        await curriculumService.updateSubject(editingSubject.id, {
+          name: newSubject.name,
+          color: newSubject.color,
+          defaultTeacherId: newSubject.defaultTeacherId || undefined
+        });
+      } else {
+        await curriculumService.createSubject({
+          classId: cls.id,
+          name: newSubject.name,
+          color: newSubject.color,
+          defaultTeacherId: newSubject.defaultTeacherId || undefined
+        });
+      }
+      setIsModalOpen(false);
+      setEditingSubject(null);
+      setNewSubject({ name: '', color: '#EF4444', defaultTeacherId: '' });
+      fetchData();
+    } catch (error) {
+      console.error("Error saving subject:", error);
+    }
+  };
+
+  const handleEditSubject = (subject: Subject) => {
+    setEditingSubject(subject);
+    setNewSubject({
+      name: subject.name,
+      color: subject.color,
+      defaultTeacherId: subject.defaultTeacherId || ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteSubject = async () => {
+    if (!subjectDeleteModal.subjectId) return;
+    try {
+      setIsDeleting(true);
+      // Note: Ideally we should delete associated topics here or handle it in backend
+      await curriculumService.deleteSubject(subjectDeleteModal.subjectId);
+      setSubjectDeleteModal({ isOpen: false, subjectId: null });
+      fetchData();
+    } catch (error) {
+      console.error("Error deleting subject:", error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleSaveTopic = async () => {
+    if (!newTopic.name || !selectedSubjectId) return;
+    try {
+      if (editingTopic) {
+        await curriculumService.updateTopic(editingTopic.id, {
+          name: newTopic.name,
+          requiredClasses: Number(newTopic.requiredClasses)
+        });
+      } else {
+        await curriculumService.createTopic({
+          classId: cls.id,
+          subjectId: selectedSubjectId,
+          name: newTopic.name,
+          requiredClasses: Number(newTopic.requiredClasses),
+          isSelected: false // Default to unchecked
+        });
+      }
+      setIsTopicModalOpen(false);
+      setEditingTopic(null);
+      setNewTopic({ name: '', requiredClasses: 0 });
+      fetchData();
+    } catch (error) {
+      console.error("Error saving topic:", error);
+    }
+  };
+
+  const handleEditTopic = (topic: Topic) => {
+    setEditingTopic(topic);
+    setSelectedSubjectId(topic.subjectId);
+    setNewTopic({
+      name: topic.name,
+      requiredClasses: topic.requiredClasses
+    });
+    setIsTopicModalOpen(true);
+  };
+
+  const handleDeleteTopic = async () => {
+    if (!topicDeleteModal.topicId) return;
+    try {
+      setIsDeleting(true);
+      await curriculumService.deleteTopic(topicDeleteModal.topicId);
+      setTopicDeleteModal({ isOpen: false, topicId: null });
+      fetchData();
+    } catch (error) {
+      console.error("Error deleting topic:", error);
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleMoveSubject = async (subjectId: string, direction: 'up' | 'down') => {
+    const currentIndex = subjects.findIndex(s => s.id === subjectId);
+    if (currentIndex === -1) return;
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+
+    // Impede de mover além dos limites
+    if (targetIndex < 0 || targetIndex >= subjects.length) return;
+
+    // Cópia do array e Swap de posições (troca dos elementos)
+    const newSubjects = [...subjects];
+    const temp = newSubjects[currentIndex];
+    newSubjects[currentIndex] = newSubjects[targetIndex];
+    newSubjects[targetIndex] = temp;
+
+    // Recalcula o 'order' de TODOS os itens baseado no novo índice (Array Index)
+    const updatedSubjects = newSubjects.map((sub, index) => ({
+      ...sub,
+      order: index
+    }));
+
+    // Atualiza o estado local imediatamente para refletir na UI
+    setSubjects(updatedSubjects);
+
+    // Prepara o payload para atualizar em lote no Firebase
+    const payload = updatedSubjects.map(sub => ({
+      id: sub.id,
+      order: sub.order
+    }));
+
+    try {
+      await curriculumService.updateSubjectOrders(payload);
+    } catch (error) {
+      console.error('Erro ao reordenar disciplinas:', error);
+      // Em caso de falha silenciosa no BD, o ideal é recarregar a lista real
+    }
+  };
+
+  const handleMoveTopic = async (topicId: string, direction: 'up' | 'down') => {
+    // 1. Encontra o assunto para saber a qual disciplina ele pertence
+    const topicToMove = topics.find(t => t.id === topicId);
+    if (!topicToMove) return;
+
+    const currentSubjectId = topicToMove.subjectId;
+
+    // 2. Isola apenas os assuntos da mesma disciplina e garante a ordenação atual
+    const subjectTopics = topics
+      .filter(t => t.subjectId === currentSubjectId)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+
+    const currentIndex = subjectTopics.findIndex(t => t.id === topicId);
+    if (currentIndex === -1) return;
+
+    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+
+    // 3. Impede de mover além dos limites da lista desta disciplina
+    if (targetIndex < 0 || targetIndex >= subjectTopics.length) return;
+
+    // 4. Cópia do array isolado e Swap de posições
+    const newSubjectTopics = [...subjectTopics];
+    const temp = newSubjectTopics[currentIndex];
+    newSubjectTopics[currentIndex] = newSubjectTopics[targetIndex];
+    newSubjectTopics[targetIndex] = temp;
+
+    // 5. Recalcula o 'order' de TODOS os assuntos desta disciplina baseado no novo índice
+    const updatedSubjectTopics = newSubjectTopics.map((topic, index) => ({
+      ...topic,
+      order: index
+    }));
+
+    // 6. Atualiza o estado global substituindo apenas os assuntos alterados
+    setTopics(prevTopics => {
+      const otherTopics = prevTopics.filter(t => t.subjectId !== currentSubjectId);
+      return [...otherTopics, ...updatedSubjectTopics].sort((a, b) => (a.order || 0) - (b.order || 0));
+    });
+
+    // 7. Prepara o payload para atualizar em lote no Firebase
+    const payload = updatedSubjectTopics.map(t => ({
+      id: t.id,
+      order: t.order
+    }));
+
+    try {
+      await curriculumService.updateTopicOrders(payload);
+    } catch (error) {
+      console.error('Erro ao reordenar assuntos:', error);
+    }
+  };
+
+  const handleToggleTopicSelection = async (topic: Topic) => {
+    try {
+      // Optimistic update
+      const updatedTopics = topics.map(t => 
+        t.id === topic.id ? { ...t, isSelected: !t.isSelected } : t
+      );
+      setTopics(updatedTopics);
+
+      await curriculumService.updateTopic(topic.id, { isSelected: !topic.isSelected });
+    } catch (error) {
+      console.error("Error updating topic selection:", error);
+      fetchData(); // Revert on error
+    }
+  };
+
+  const handleUpdateTopicTeacher = async (topicId: string, teacherId: string | null) => {
+    try {
+      // Optimistic update
+      const updatedTopics = topics.map(t => 
+        t.id === topicId ? { ...t, teacherId: teacherId || undefined } : t
+      );
+      setTopics(updatedTopics);
+
+      // Send null to remove the field/set to null in Firestore
+      await curriculumService.updateTopic(topicId, { teacherId: teacherId as any });
+    } catch (error) {
+      console.error("Error updating topic teacher:", error);
+      fetchData(); // Revert on error
+    }
+  };
+
+  const handleBulkApplyTeacher = async (subjectId: string) => {
+    if (!confirm("Deseja vincular o professor titular a todos os assuntos desta disciplina? Isso removerá professores específicos.")) return;
+    
+    try {
+      const subjectTopics = topics.filter(t => t.subjectId === subjectId);
+      
+      // Optimistic update
+      const updatedTopics = topics.map(t => 
+        t.subjectId === subjectId ? { ...t, teacherId: undefined } : t
+      );
+      setTopics(updatedTopics);
+
+      await Promise.all(subjectTopics.map(t => 
+        curriculumService.updateTopic(t.id, { teacherId: null as any })
+      ));
+    } catch (error) {
+      console.error("Error bulk updating teachers:", error);
+      fetchData();
+    }
+  };
+
+  const handleSaveModule = async () => {
+    if (!newModule.name || !activeTopicId) return;
+    
+    try {
+      const topic = topics.find(t => t.id === activeTopicId);
+      if (!topic) return;
+
+      const currentModules = topic.modules || [];
+      let updatedModules: Module[];
+
+      if (editingModule) {
+        updatedModules = currentModules.map(m => 
+          m.id === editingModule.id 
+            ? { ...m, name: newModule.name, classesCount: Number(newModule.classesCount) }
+            : m
+        );
+      } else {
+        const newMod: Module = {
+          id: Date.now().toString(),
+          name: newModule.name,
+          classesCount: Number(newModule.classesCount)
+        };
+        updatedModules = [...currentModules, newMod];
+      }
+
+      // Optimistic update
+      const updatedTopics = topics.map(t => 
+        t.id === activeTopicId ? { ...t, modules: updatedModules } : t
+      );
+      setTopics(updatedTopics);
+
+      await curriculumService.updateTopic(activeTopicId, { modules: updatedModules });
+      
+      setIsModuleModalOpen(false);
+      setEditingModule(null);
+      setNewModule({ name: '', classesCount: 1 });
+    } catch (error) {
+      console.error("Error saving module:", error);
+      fetchData(); // Revert on error
+    }
+  };
+
+  const handleDeleteModule = async () => {
+    if (!moduleDeleteModal.topicId || !moduleDeleteModal.moduleId) return;
+
+    try {
+      setIsDeleting(true);
+      const topic = topics.find(t => t.id === moduleDeleteModal.topicId);
+      if (!topic) return;
+
+      const updatedModules = (topic.modules || []).filter(m => m.id !== moduleDeleteModal.moduleId);
+
+      // Optimistic update
+      const updatedTopics = topics.map(t => 
+        t.id === moduleDeleteModal.topicId ? { ...t, modules: updatedModules } : t
+      );
+      setTopics(updatedTopics);
+
+      await curriculumService.updateTopic(moduleDeleteModal.topicId!, { modules: updatedModules });
+      
+      setModuleDeleteModal({ isOpen: false, topicId: null, moduleId: null });
+    } catch (error) {
+      console.error("Error deleting module:", error);
+      fetchData(); // Revert on error
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleMoveModule = async (topicId: string, moduleId: string, direction: 'up' | 'down') => {
+    const topic = topics.find(t => t.id === topicId);
+    if (!topic || !topic.modules) return;
+
+    const moduleIndex = topic.modules.findIndex(m => m.id === moduleId);
+    if (moduleIndex === -1) return;
+
+    const targetIndex = direction === 'up' ? moduleIndex - 1 : moduleIndex + 1;
+    if (targetIndex < 0 || targetIndex >= topic.modules.length) return;
+
+    const newModules = [...topic.modules];
+    const temp = newModules[moduleIndex];
+    newModules[moduleIndex] = newModules[targetIndex];
+    newModules[targetIndex] = temp;
+
+    // Optimistic update
+    const updatedTopics = topics.map(t => 
+      t.id === topicId ? { ...t, modules: newModules } : t
+    );
+    setTopics(updatedTopics);
+
+    try {
+      await curriculumService.updateTopic(topicId, { modules: newModules });
+    } catch (error) {
+      console.error("Error moving module:", error);
+      fetchData(); // Revert on error
+    }
+  };
+
+  const handleSyncGrade = async () => {
+    setIsSyncing(true);
+    // Simulate processing time
+    await new Promise(r => setTimeout(r, 800));
+    
+    setIsSyncing(false);
+    setSyncSuccess(true);
+    
+    // Reset success state after 3 seconds
+    setTimeout(() => {
+      setSyncSuccess(false);
+    }, 3000);
+  };
+
+  const openTopicModal = (subjectId: string) => {
+    setEditingTopic(null);
+    setNewTopic({ name: '', requiredClasses: 0 });
+    setSelectedSubjectId(subjectId);
+    setIsTopicModalOpen(true);
+  };
+
+  const toggleSubject = (subjectId: string) => {
+    setExpandedSubjects(prev => 
+      prev.includes(subjectId) ? prev.filter(id => id !== subjectId) : [...prev, subjectId]
+    );
+  };
+
+  const getTeacherName = (id?: string) => {
+    if (!id) return null;
+    return teachers.find(t => t.id === id)?.name || 'Professor não encontrado';
+  };
+
+  const getTopicTeacherName = (topic: Topic, subject: Subject) => {
+    if (topic.teacherId) return getTeacherName(topic.teacherId);
+    if (subject.defaultTeacherId) return getTeacherName(subject.defaultTeacherId);
+    return 'Sem Professor';
+  };
+
+  return (
+    <div className="flex flex-col lg:flex-row gap-6 h-full animate-in fade-in duration-500">
+      {/* Left Column: Subjects List */}
+      <div className="flex-1 space-y-6">
+        <div className="flex justify-between items-center">
+          <h3 className="text-xl font-bold text-white">Disciplinas e Assuntos</h3>
+          <button
+            onClick={() => {
+              setEditingSubject(null);
+              setNewSubject({ name: '', color: '#EF4444', defaultTeacherId: '' });
+              setIsModalOpen(true);
+            }}
+            className="flex items-center gap-2 px-4 py-2 bg-brand-red hover:bg-red-600 text-white rounded-lg font-bold uppercase text-xs tracking-wider transition-colors shadow-lg shadow-brand-red/20"
+          >
+            <Plus className="w-4 h-4" />
+            Nova Disciplina
+          </button>
+        </div>
+
+        <div className="space-y-4">
+          {subjects.map(subject => (
+            <div key={subject.id} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+              <div 
+                className="flex items-center justify-between p-4 cursor-pointer hover:bg-zinc-800/50 transition-colors"
+                onClick={() => toggleSubject(subject.id)}
+                style={{ borderLeft: `4px solid ${subject.color}` }}
+              >
+                <div className="flex items-center gap-4">
+                  <h4 className="font-bold text-white">{subject.name}</h4>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-zinc-500 flex items-center gap-1">
+                      <User className="w-3 h-3" />
+                      {getTeacherName(subject.defaultTeacherId) || 'Sem Titular'}
+                    </span>
+                    {subject.defaultTeacherId && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleBulkApplyTeacher(subject.id);
+                        }}
+                        className="text-[10px] bg-zinc-800 hover:bg-zinc-700 text-zinc-400 px-2 py-0.5 rounded border border-zinc-700 transition-colors"
+                        title="Vincular Titular a Todos os Assuntos"
+                      >
+                        Aplicar a todos
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-1 mr-2">
+                    <div className="flex flex-col mr-1">
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMoveSubject(subject.id, 'up');
+                        }}
+                        className="p-0.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded"
+                        title="Mover para cima"
+                      >
+                        <ChevronUp className="w-3 h-3" />
+                      </button>
+                      <button 
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleMoveSubject(subject.id, 'down');
+                        }}
+                        className="p-0.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded"
+                        title="Mover para baixo"
+                      >
+                        <ChevronDown className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleEditSubject(subject);
+                      }}
+                      className="p-1.5 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded transition-colors"
+                      title="Editar Disciplina"
+                    >
+                      <Edit2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSubjectDeleteModal({ isOpen: true, subjectId: subject.id });
+                      }}
+                      className="p-1.5 text-zinc-400 hover:text-red-500 hover:bg-zinc-800 rounded transition-colors"
+                      title="Excluir Disciplina"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                  <span className="text-xs text-zinc-500">
+                    {topics.filter(t => t.subjectId === subject.id).length} assuntos
+                  </span>
+                  {expandedSubjects.includes(subject.id) ? (
+                    <ChevronUp className="w-4 h-4 text-zinc-500" />
+                  ) : (
+                    <ChevronDown className="w-4 h-4 text-zinc-500" />
+                  )}
+                </div>
+              </div>
+
+              {expandedSubjects.includes(subject.id) && (
+                <div className="p-4 bg-zinc-950/50 border-t border-zinc-800 space-y-3">
+                  {topics.filter(t => t.subjectId === subject.id).map(topic => (
+                    <div key={topic.id} className="bg-zinc-900 border border-zinc-800 p-3 rounded-lg hover:border-zinc-700 transition-colors">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => handleToggleTopicSelection(topic)}
+                            className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${
+                              topic.isSelected 
+                                ? 'bg-brand-red text-white' 
+                                : 'bg-zinc-800 text-transparent border border-zinc-700 hover:border-zinc-500'
+                            }`}
+                          >
+                            <CheckSquare className="w-3.5 h-3.5" />
+                          </button>
+                          <div>
+                            <p className={`text-sm font-medium ${topic.isSelected ? 'text-white' : 'text-zinc-500'}`}>
+                              {topic.name}
+                            </p>
+                            <div className="mt-2">
+                              <select
+                                value={topic.teacherId || ''}
+                                onChange={(e) => handleUpdateTopicTeacher(topic.id, e.target.value || null)}
+                                className="w-full bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-[10px] text-zinc-400 focus:outline-none focus:border-brand-red transition-colors appearance-none cursor-pointer hover:border-zinc-700"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <option value="">Herda da Disciplina ({getTeacherName(subject.defaultTeacherId) || 'Sem Titular'})</option>
+                                {teachers.map(teacher => (
+                                  <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+                                ))}
+                              </select>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div className="text-right">
+                            <span className="block text-xs font-bold text-white">
+                              {topic.modules?.reduce((acc, mod) => acc + mod.classesCount, 0) || 0} aulas
+                            </span>
+                            <span className="text-[10px] text-zinc-600 uppercase">Total</span>
+                          </div>
+                          
+                          <div className="flex items-center gap-1 pl-2 border-l border-zinc-800">
+                            <div className="flex flex-col">
+                              <button 
+                                onClick={() => handleMoveTopic(topic.id, 'up')}
+                                className="p-0.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded"
+                                title="Mover para cima"
+                              >
+                                <ChevronUp className="w-3 h-3" />
+                              </button>
+                              <button 
+                                onClick={() => handleMoveTopic(topic.id, 'down')}
+                                className="p-0.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded"
+                                title="Mover para baixo"
+                              >
+                                <ChevronDown className="w-3 h-3" />
+                              </button>
+                            </div>
+                            <button
+                              onClick={() => handleEditTopic(topic)}
+                              className="p-1.5 text-zinc-500 hover:text-white hover:bg-zinc-800 rounded transition-colors"
+                              title="Editar Assunto"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={() => setTopicDeleteModal({ isOpen: true, topicId: topic.id })}
+                              className="p-1.5 text-zinc-500 hover:text-red-500 hover:bg-zinc-800 rounded transition-colors"
+                              title="Excluir Assunto"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Modules List */}
+                      <div className="mt-3 pl-4 border-l-2 border-zinc-800 space-y-2">
+                        {topic.modules?.map((module, index) => (
+                          <div key={module.id} className="flex items-center justify-between bg-zinc-950/50 p-2 rounded border border-zinc-800/50 hover:border-zinc-700 transition-colors group">
+                            <div className="flex items-center gap-2">
+                              <div className="w-1.5 h-1.5 rounded-full bg-zinc-700 group-hover:bg-brand-red transition-colors" />
+                              <span className="text-xs text-zinc-300">{module.name}</span>
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-[10px] font-bold text-zinc-500 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">
+                                {module.classesCount} aulas
+                              </span>
+                              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <div className="flex flex-col mr-1">
+                                  <button 
+                                    onClick={() => handleMoveModule(topic.id, module.id, 'up')}
+                                    className="p-0.5 text-zinc-600 hover:text-white hover:bg-zinc-800 rounded"
+                                    disabled={index === 0}
+                                  >
+                                    <ChevronUp className="w-2.5 h-2.5" />
+                                  </button>
+                                  <button 
+                                    onClick={() => handleMoveModule(topic.id, module.id, 'down')}
+                                    className="p-0.5 text-zinc-600 hover:text-white hover:bg-zinc-800 rounded"
+                                    disabled={index === (topic.modules?.length || 0) - 1}
+                                  >
+                                    <ChevronDown className="w-2.5 h-2.5" />
+                                  </button>
+                                </div>
+                                <button
+                                  onClick={() => {
+                                    setEditingModule(module);
+                                    setNewModule({ name: module.name, classesCount: module.classesCount });
+                                    setActiveTopicId(topic.id);
+                                    setIsModuleModalOpen(true);
+                                  }}
+                                  className="p-1 text-zinc-600 hover:text-white hover:bg-zinc-800 rounded"
+                                >
+                                  <Edit2 className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => setModuleDeleteModal({ isOpen: true, topicId: topic.id, moduleId: module.id })}
+                                  className="p-1 text-zinc-600 hover:text-red-500 hover:bg-zinc-800 rounded"
+                                >
+                                  <Trash2 className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        
+                        <button
+                          onClick={() => {
+                            setEditingModule(null);
+                            setNewModule({ name: '', classesCount: 1 });
+                            setActiveTopicId(topic.id);
+                            setIsModuleModalOpen(true);
+                          }}
+                          className="text-[10px] font-bold uppercase text-zinc-600 hover:text-brand-red flex items-center gap-1 mt-2 transition-colors"
+                        >
+                          <Plus className="w-3 h-3" />
+                          Adicionar Módulo
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+
+                  <button 
+                    onClick={() => openTopicModal(subject.id)}
+                    className="w-full py-2 border border-dashed border-zinc-800 rounded-lg text-zinc-500 text-xs font-bold uppercase hover:text-brand-red hover:border-brand-red/30 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Plus className="w-3 h-3" />
+                    Adicionar Assunto
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+          
+          {subjects.length === 0 && !loading && (
+            <div className="text-center py-12 text-zinc-500 border border-dashed border-zinc-800 rounded-xl">
+              Nenhuma disciplina cadastrada. Comece adicionando uma disciplina.
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Right Column: Workload Dashboard (Sticky) */}
+      <div className="lg:w-80 shrink-0">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 sticky top-6 space-y-6">
+          <div className="flex items-center gap-2 border-b border-zinc-800 pb-4">
+            <BookOpen className="w-5 h-5 text-brand-red" />
+            <h3 className="font-bold text-white">Carga Horária</h3>
+          </div>
+
+          <div className="space-y-4">
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-zinc-400">Total de Encontros:</span>
+              <span className="text-white font-bold">{cls.totalMeetings}</span>
+            </div>
+            <div className="flex justify-between items-center text-sm">
+              <span className="text-zinc-400">Aulas por Encontro:</span>
+              <span className="text-white font-bold">{cls.classesPerMeeting}</span>
+            </div>
+            
+            <div className="pt-4 border-t border-zinc-800">
+              <div className="flex justify-between items-center mb-2">
+                <span className="text-xs font-bold text-zinc-500 uppercase">Encontros Utilizados</span>
+                <span className={`text-xl font-black ${isOverLimit ? 'text-red-500' : 'text-white'}`}>
+                  {meetingsConsumed}
+                </span>
+              </div>
+              
+              {/* Progress Bar */}
+              <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                <div 
+                  className={`h-full transition-all duration-500 ${isOverLimit ? 'bg-red-500' : 'bg-brand-red'}`}
+                  style={{ width: `${Math.min((meetingsConsumed / cls.totalMeetings) * 100, 100)}%` }}
+                />
+              </div>
+
+              <div className="flex justify-between items-center mt-2 text-xs">
+                <span className="text-zinc-500">Saldo Restante:</span>
+                <span className={`font-bold ${meetingsBalance < 0 ? 'text-red-500' : 'text-green-500'}`}>
+                  {meetingsBalance} encontros
+                </span>
+              </div>
+            </div>
+
+            <button
+              onClick={handleSyncGrade}
+              disabled={isSyncing || syncSuccess}
+              className={`w-full py-3 text-white rounded-lg font-bold uppercase text-xs tracking-wider shadow-lg transition-all flex items-center justify-center gap-2 ${
+                syncSuccess 
+                  ? 'bg-green-600 hover:bg-green-700 shadow-green-600/20' 
+                  : 'bg-brand-red hover:bg-red-600 shadow-brand-red/20'
+              } ${isSyncing ? 'opacity-70 cursor-wait' : ''}`}
+            >
+              {isSyncing ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Sincronizando...
+                </>
+              ) : syncSuccess ? (
+                <>
+                  <CheckSquare className="w-4 h-4" />
+                  Grade Sincronizada!
+                </>
+              ) : (
+                <>
+                  <Save className="w-4 h-4" />
+                  Salvar e Sincronizar Grade
+                </>
+              )}
+            </button>
+
+            {isOverLimit && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-red-500 shrink-0" />
+                <div className="space-y-1">
+                  <p className="text-xs font-bold text-red-500 uppercase">Limite Excedido</p>
+                  <p className="text-[10px] text-red-400 leading-tight">
+                    Custo adicional gerado por {Math.abs(meetingsBalance)} encontros extrapolados.
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Create/Edit Subject Modal */}
+      {isModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-bold text-white mb-4">
+              {editingSubject ? 'Editar Disciplina' : 'Nova Disciplina'}
+            </h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Nome da Disciplina</label>
+                <input
+                  type="text"
+                  value={newSubject.name}
+                  onChange={(e) => setNewSubject({ ...newSubject, name: e.target.value })}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-brand-red transition-colors"
+                  placeholder="Ex: Direito Constitucional"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Cor de Identificação</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={newSubject.color}
+                    onChange={(e) => setNewSubject({ ...newSubject, color: e.target.value })}
+                    className="w-12 h-12 rounded cursor-pointer bg-transparent border-0 p-0"
+                  />
+                  <span className="text-zinc-500 text-xs uppercase">{newSubject.color}</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Professor Titular (Padrão)</label>
+                <select
+                  value={newSubject.defaultTeacherId}
+                  onChange={(e) => setNewSubject({ ...newSubject, defaultTeacherId: e.target.value })}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-brand-red transition-colors appearance-none"
+                >
+                  <option value="">Selecione um professor (Opcional)</option>
+                  {teachers.map(teacher => (
+                    <option key={teacher.id} value={teacher.id}>{teacher.name}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setIsModalOpen(false)}
+                className="px-4 py-2 rounded-lg font-bold uppercase text-xs tracking-wider text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveSubject}
+                disabled={!newSubject.name}
+                className="px-6 py-2 bg-brand-red hover:bg-red-600 text-white rounded-lg font-bold uppercase text-xs tracking-wider shadow-lg shadow-brand-red/20 transition-colors disabled:opacity-50"
+              >
+                {editingSubject ? 'Salvar Alterações' : 'Criar Disciplina'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Subject Confirmation Modal */}
+      {subjectDeleteModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-sm rounded-xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
+                <Trash2 className="w-6 h-6 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Excluir Disciplina</h3>
+                <p className="text-zinc-400 text-sm mt-2">
+                  Tem certeza que deseja excluir esta disciplina? Todos os assuntos vinculados também serão removidos.
+                </p>
+              </div>
+              <div className="flex gap-3 w-full pt-2">
+                <button
+                  onClick={() => setSubjectDeleteModal({ isOpen: false, subjectId: null })}
+                  className="flex-1 px-4 py-2 rounded-lg font-bold uppercase text-xs tracking-wider text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleDeleteSubject}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold uppercase text-xs tracking-wider shadow-lg shadow-red-600/20 transition-colors disabled:opacity-50"
+                >
+                  {isDeleting ? 'Excluindo...' : 'Excluir'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create/Edit Topic Modal */}
+      {isTopicModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-bold text-white mb-4">
+              {editingTopic ? 'Editar Assunto' : 'Novo Assunto'}
+            </h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Nome do Assunto</label>
+                <input
+                  type="text"
+                  value={newTopic.name}
+                  onChange={(e) => setNewTopic({ ...newTopic, name: e.target.value })}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-brand-red transition-colors"
+                  placeholder="Ex: Controle de Constitucionalidade"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setIsTopicModalOpen(false)}
+                className="px-4 py-2 rounded-lg font-bold uppercase text-xs tracking-wider text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveTopic}
+                disabled={!newTopic.name}
+                className="px-6 py-2 bg-brand-red hover:bg-red-600 text-white rounded-lg font-bold uppercase text-xs tracking-wider shadow-lg shadow-brand-red/20 transition-colors disabled:opacity-50"
+              >
+                {editingTopic ? 'Salvar Alterações' : 'Adicionar Assunto'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Topic Confirmation Modal */}
+      {topicDeleteModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-sm rounded-xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
+                <Trash2 className="w-6 h-6 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Excluir Assunto</h3>
+                <p className="text-zinc-400 text-sm mt-2">
+                  Tem certeza que deseja excluir este assunto? Esta ação não pode ser desfeita.
+                </p>
+              </div>
+              <div className="flex gap-3 w-full pt-2">
+                <button
+                  onClick={() => setTopicDeleteModal({ isOpen: false, topicId: null })}
+                  className="flex-1 px-4 py-2 rounded-lg font-bold uppercase text-xs tracking-wider text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleDeleteTopic}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold uppercase text-xs tracking-wider shadow-lg shadow-red-600/20 transition-colors disabled:opacity-50"
+                >
+                  {isDeleting ? 'Excluindo...' : 'Excluir'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create/Edit Module Modal */}
+      {isModuleModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-md rounded-xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
+            <h3 className="text-lg font-bold text-white mb-4">
+              {editingModule ? 'Editar Módulo' : 'Novo Módulo'}
+            </h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Nome do Módulo</label>
+                <input
+                  type="text"
+                  value={newModule.name}
+                  onChange={(e) => setNewModule({ ...newModule, name: e.target.value })}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-brand-red transition-colors"
+                  placeholder="Ex: Introdução ao Direito"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Quantidade de Aulas</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={newModule.classesCount}
+                  onChange={(e) => setNewModule({ ...newModule, classesCount: Number(e.target.value) })}
+                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-4 py-2 text-white focus:outline-none focus:border-brand-red transition-colors"
+                />
+                <p className="text-[10px] text-zinc-600 mt-1">
+                  Quantas aulas são necessárias para este módulo?
+                </p>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 mt-6">
+              <button
+                onClick={() => setIsModuleModalOpen(false)}
+                className="px-4 py-2 rounded-lg font-bold uppercase text-xs tracking-wider text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleSaveModule}
+                disabled={!newModule.name}
+                className="px-6 py-2 bg-brand-red hover:bg-red-600 text-white rounded-lg font-bold uppercase text-xs tracking-wider shadow-lg shadow-brand-red/20 transition-colors disabled:opacity-50"
+              >
+                {editingModule ? 'Salvar Alterações' : 'Adicionar Módulo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Module Confirmation Modal */}
+      {moduleDeleteModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4 animate-in fade-in duration-200">
+          <div className="bg-zinc-900 border border-zinc-800 w-full max-w-sm rounded-xl shadow-2xl p-6 animate-in zoom-in-95 duration-200">
+            <div className="flex flex-col items-center text-center space-y-4">
+              <div className="w-12 h-12 rounded-full bg-red-500/10 flex items-center justify-center">
+                <Trash2 className="w-6 h-6 text-red-500" />
+              </div>
+              <div>
+                <h3 className="text-lg font-bold text-white">Excluir Módulo</h3>
+                <p className="text-zinc-400 text-sm mt-2">
+                  Tem certeza que deseja excluir este módulo? Esta ação não pode ser desfeita.
+                </p>
+              </div>
+              <div className="flex gap-3 w-full pt-2">
+                <button
+                  onClick={() => setModuleDeleteModal({ isOpen: false, topicId: null, moduleId: null })}
+                  className="flex-1 px-4 py-2 rounded-lg font-bold uppercase text-xs tracking-wider text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleDeleteModule}
+                  disabled={isDeleting}
+                  className="flex-1 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-bold uppercase text-xs tracking-wider shadow-lg shadow-red-600/20 transition-colors disabled:opacity-50"
+                >
+                  {isDeleting ? 'Excluindo...' : 'Excluir'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

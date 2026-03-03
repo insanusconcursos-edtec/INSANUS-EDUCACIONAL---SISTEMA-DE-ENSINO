@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Search, Filter, Calendar, Users, Edit2, Trash2, AlertTriangle, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Search, Filter, Calendar, Users, Edit2, Trash2, AlertTriangle, ChevronDown, ChevronUp, Settings } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { Class } from '../../../../types/class';
 import { classService } from '../../../../services/classService';
 import { ClassFormModal } from './ClassFormModal';
@@ -34,6 +35,7 @@ interface ClassCardProps {
 
 const ClassCard: React.FC<ClassCardProps> = ({ cls, onEdit, onDelete }) => {
   const [isExpanded, setIsExpanded] = useState(false);
+  const navigate = useNavigate();
 
   return (
     <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden group hover:border-zinc-600 transition-all hover:shadow-xl flex flex-col">
@@ -93,6 +95,17 @@ const ClassCard: React.FC<ClassCardProps> = ({ cls, onEdit, onDelete }) => {
           </div>
         </div>
       )}
+
+      {/* Manage Button */}
+      <div className="p-3 bg-zinc-900 border-t border-zinc-800">
+        <button
+          onClick={() => navigate(`/admin/presencial/${cls.id}`)}
+          className="w-full flex items-center justify-center gap-2 py-2 bg-brand-red hover:bg-red-600 text-white rounded-lg font-bold uppercase text-xs tracking-wider transition-colors shadow-lg shadow-brand-red/20"
+        >
+          <Settings className="w-4 h-4" />
+          Gerenciar Turma
+        </button>
+      </div>
 
       {/* Actions Footer */}
       <div className="p-3 grid grid-cols-2 gap-2 border-t border-zinc-800 bg-zinc-950/30 mt-auto">

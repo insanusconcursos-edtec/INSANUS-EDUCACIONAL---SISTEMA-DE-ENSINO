@@ -9,6 +9,7 @@ import SimulatedClassDetails from './pages/admin/SimulatedClassDetails';
 import TeamManager from './pages/admin/TeamManager';
 import { AdminCoursesTab } from './components/admin/courses/AdminCoursesTab'; // Nova Importação
 import PresentialClassesPage from './pages/admin/PresentialClasses'; // Nova Importação Presential
+import PresentialClassManager from './pages/admin/PresentialClassManager';
 import { StudentCoursesTab } from './components/student/courses/StudentCoursesTab'; // Nova Importação Student
 import AdminLayout from './components/Layout/AdminLayout';
 import StudentLayout from './components/Layout/StudentLayout';
@@ -62,6 +63,7 @@ const App: React.FC = () => {
             <Route path="cursos" element={<AdminCoursesTab />} /> {/* Nova Rota */}
 
             <Route path="presencial" element={<PresentialClassesPage />} /> {/* Nova Rota Presencial */}
+            <Route path="presencial/:classId" element={<PresentialClassManager />} />
 
             <Route path="alunos" element={<StudentManager />} />
             

@@ -33,4 +33,11 @@ export interface Class {
   status: ClassStatus;
   createdAt?: string;
   updatedAt?: string;
+  remunerationConfig?: {
+    mode: 'DYNAMIC' | 'FIXED';
+    fixedHourlyRate?: number;
+    recordingCommission: number;
+    substitutionCommission: number;
+    weekendCommission: number;
+  };
 }
