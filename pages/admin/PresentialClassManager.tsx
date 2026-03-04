@@ -2,9 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Calendar, Users, DollarSign, BookOpen, Clock } from 'lucide-react';
 import { classService } from '../../services/classService';
+import { curriculumService } from '../../services/curriculumService';
+import { teacherService } from '../../services/teacherService';
 import { Class } from '../../types/class';
+import { Topic, Subject } from '../../types/curriculum';
+import { Teacher } from '../../types/teacher';
 import { RemunerationTab } from '../../components/admin/presential/classes/manager/RemunerationTab';
 import { SubjectsTab } from '../../components/admin/presential/classes/manager/SubjectsTab';
+import { ScheduleTab } from '../../components/admin/presential/classes/manager/ScheduleTab';
 import { formatSafeDateLocal } from '../../utils/dateUtils';
 
 const PresentialClassManager: React.FC = () => {
@@ -12,24 +17,35 @@ const PresentialClassManager: React.FC = () => {
   console.log("Montou Gerenciador da Turma:", classId);
   const navigate = useNavigate();
   const [currentClass, setCurrentClass] = useState<Class | null>(null);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
 
-  const fetchClass = async () => {
+  const fetchData = async () => {
     if (!classId) return;
     try {
       setLoading(true);
-      const data = await classService.getClassById(classId);
-      setCurrentClass(data);
+      const [classData, topicsData, subjectsData, teachersData] = await Promise.all([
+        classService.getClassById(classId),
+        curriculumService.getTopicsByClass(classId),
+        curriculumService.getSubjectsByClass(classId),
+        teacherService.getTeachers()
+      ]);
+      setCurrentClass(classData);
+      setTopics(topicsData);
+      setSubjects(subjectsData);
+      setTeachers(teachersData);
     } catch (error) {
-      console.error("Error fetching class:", error);
+      console.error("Error fetching class data:", error);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchClass();
+    fetchData();
   }, [classId]);
 
   if (loading) {
@@ -61,11 +77,18 @@ const PresentialClassManager: React.FC = () => {
           </div>
         );
       case 'remuneration':
-        return <RemunerationTab cls={currentClass} onUpdate={fetchClass} />;
+        return <RemunerationTab cls={currentClass} onUpdate={fetchData} />;
       case 'subjects':
         return <SubjectsTab cls={currentClass} />;
       case 'schedule':
-        return <div className="p-6 text-white">Aba de Cronograma em construção...</div>;
+        return (
+          <ScheduleTab 
+            cls={currentClass} 
+            topics={topics} 
+            subjects={subjects} 
+            teachers={teachers} 
+          />
+        );
       case 'students':
         return <div className="p-6 text-white">Aba de Alunos em construção...</div>;
       default:
