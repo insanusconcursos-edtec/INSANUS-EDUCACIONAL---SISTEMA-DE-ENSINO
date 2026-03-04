@@ -2,6 +2,7 @@ export interface Module {
   id: string;
   name: string;
   classesCount: number;
+  isSelected?: boolean;
 }
 
 export interface Subject {

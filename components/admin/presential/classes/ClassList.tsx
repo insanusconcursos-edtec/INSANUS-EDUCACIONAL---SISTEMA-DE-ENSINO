@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { Class } from '../../../../types/class';
 import { classService } from '../../../../services/classService';
 import { ClassFormModal } from './ClassFormModal';
+import { formatSafeDateLocal } from '../../../../utils/dateUtils';
 
 // Helper functions moved outside component to be used by ClassCard
 const getStatusBadge = (status: string) => {
@@ -73,7 +74,7 @@ const ClassCard: React.FC<ClassCardProps> = ({ cls, onEdit, onDelete }) => {
           <div className="flex items-center justify-between text-xs text-zinc-400 border-b border-zinc-800 pb-3">
             <div className="flex items-center gap-1">
               <Calendar className="w-3 h-3" />
-              <span>Início: {new Date(cls.startDate).toLocaleDateString('pt-BR')}</span>
+              <span>Início: {formatSafeDateLocal(cls.startDate)}</span>
             </div>
             <div className="flex items-center gap-1">
               <Users className="w-3 h-3" />

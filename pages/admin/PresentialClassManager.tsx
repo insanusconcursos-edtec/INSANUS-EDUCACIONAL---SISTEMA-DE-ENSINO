@@ -5,6 +5,7 @@ import { classService } from '../../services/classService';
 import { Class } from '../../types/class';
 import { RemunerationTab } from '../../components/admin/presential/classes/manager/RemunerationTab';
 import { SubjectsTab } from '../../components/admin/presential/classes/manager/SubjectsTab';
+import { formatSafeDateLocal } from '../../utils/dateUtils';
 
 const PresentialClassManager: React.FC = () => {
   const { classId } = useParams<{ classId: string }>();
@@ -111,7 +112,7 @@ const PresentialClassManager: React.FC = () => {
               </div>
               <div className="flex items-center gap-2">
                 <Calendar className="w-4 h-4" />
-                <span>Início: {new Date(currentClass.startDate).toLocaleDateString('pt-BR')}</span>
+                <span>Início: {formatSafeDateLocal(currentClass.startDate)}</span>
               </div>
             </div>
           </div>

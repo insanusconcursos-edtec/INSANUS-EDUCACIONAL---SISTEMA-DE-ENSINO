@@ -63,8 +63,9 @@ export const RemunerationTab: React.FC<RemunerationTabProps> = ({ cls, onUpdate 
     } 
   } as Class;
   
-  const { calculateProjectedCost } = useFinancialCalculations(liveClassData, topics, subjects, teachers);
+  const { calculateProjectedCost, getFinancialDiagnostics } = useFinancialCalculations(liveClassData, topics, subjects, teachers);
   const projectedCost = calculateProjectedCost();
+  const diagnostics = getFinancialDiagnostics();
 
   const totalHours = cls.totalMeetings * cls.meetingDuration;
 
@@ -284,6 +285,31 @@ export const RemunerationTab: React.FC<RemunerationTabProps> = ({ cls, onUpdate 
               <p className="text-[10px] text-zinc-600 mt-2 leading-tight">
                 * Cálculo provisório baseado nos assuntos atualmente selecionados na grade. Comissões de Substituição e Finais de Semana serão acrescidas no decorrer da execução do Cronograma.
               </p>
+
+              {/* Diagnostics Alerts */}
+              {config.mode === 'DYNAMIC' && diagnostics.teachersWithoutRate.length > 0 && (
+                <div className="bg-yellow-900/30 border border-yellow-600/50 text-yellow-400 p-3 rounded-md mt-4 text-xs animate-in slide-in-from-top-2">
+                  <div className="flex items-start gap-2">
+                    <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                    <div>
+                      <span className="font-bold block mb-1">⚠️ Atenção</span>
+                      Os seguintes professores estão com o 'Valor Hora/Aula' zerado ou não cadastrado em seus perfis: <span className="font-semibold text-yellow-200">{diagnostics.teachersWithoutRate.join(', ')}</span>. O cálculo dinâmico resultará em zero para as aulas deles.
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {projectedCost === 0 && topics.some(t => t.isSelected) && diagnostics.teachersWithoutRate.length === 0 && (
+                 <div className="bg-zinc-800/50 border border-zinc-700 text-zinc-400 p-3 rounded-md mt-4 text-xs animate-in slide-in-from-top-2">
+                    <div className="flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold block mb-1">Custo Zerado</span>
+                        Verifique se os assuntos selecionados possuem módulos com duração definida ou se o valor fixo foi configurado corretamente.
+                      </div>
+                    </div>
+                 </div>
+              )}
             </div>
           </div>
         </div>

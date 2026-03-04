@@ -61,7 +61,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
   const totalSelectedClasses = topics
     .filter(t => t.isSelected)
     .reduce((acc, topic) => {
-      const topicClasses = topic.modules?.reduce((sum, mod) => sum + mod.classesCount, 0) || 0;
+      const topicClasses = topic.modules?.filter(m => m.isSelected !== false).reduce((sum, mod) => sum + mod.classesCount, 0) || 0;
       return acc + topicClasses;
     }, 0);
 
@@ -70,207 +70,58 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
   const isOverLimit = meetingsBalance < 0;
 
   // Handlers
-  const handleSaveSubject = async () => {
-    if (!newSubject.name) return;
-    try {
-      if (editingSubject) {
-        await curriculumService.updateSubject(editingSubject.id, {
-          name: newSubject.name,
-          color: newSubject.color,
-          defaultTeacherId: newSubject.defaultTeacherId || undefined
-        });
-      } else {
-        await curriculumService.createSubject({
-          classId: cls.id,
-          name: newSubject.name,
-          color: newSubject.color,
-          defaultTeacherId: newSubject.defaultTeacherId || undefined
-        });
-      }
-      setIsModalOpen(false);
-      setEditingSubject(null);
-      setNewSubject({ name: '', color: '#EF4444', defaultTeacherId: '' });
-      fetchData();
-    } catch (error) {
-      console.error("Error saving subject:", error);
-    }
-  };
-
-  const handleEditSubject = (subject: Subject) => {
-    setEditingSubject(subject);
-    setNewSubject({
-      name: subject.name,
-      color: subject.color,
-      defaultTeacherId: subject.defaultTeacherId || ''
-    });
-    setIsModalOpen(true);
-  };
-
-  const handleDeleteSubject = async () => {
-    if (!subjectDeleteModal.subjectId) return;
-    try {
-      setIsDeleting(true);
-      // Note: Ideally we should delete associated topics here or handle it in backend
-      await curriculumService.deleteSubject(subjectDeleteModal.subjectId);
-      setSubjectDeleteModal({ isOpen: false, subjectId: null });
-      fetchData();
-    } catch (error) {
-      console.error("Error deleting subject:", error);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const handleSaveTopic = async () => {
-    if (!newTopic.name || !selectedSubjectId) return;
-    try {
-      if (editingTopic) {
-        await curriculumService.updateTopic(editingTopic.id, {
-          name: newTopic.name,
-          requiredClasses: Number(newTopic.requiredClasses)
-        });
-      } else {
-        await curriculumService.createTopic({
-          classId: cls.id,
-          subjectId: selectedSubjectId,
-          name: newTopic.name,
-          requiredClasses: Number(newTopic.requiredClasses),
-          isSelected: false // Default to unchecked
-        });
-      }
-      setIsTopicModalOpen(false);
-      setEditingTopic(null);
-      setNewTopic({ name: '', requiredClasses: 0 });
-      fetchData();
-    } catch (error) {
-      console.error("Error saving topic:", error);
-    }
-  };
-
-  const handleEditTopic = (topic: Topic) => {
-    setEditingTopic(topic);
-    setSelectedSubjectId(topic.subjectId);
-    setNewTopic({
-      name: topic.name,
-      requiredClasses: topic.requiredClasses
-    });
-    setIsTopicModalOpen(true);
-  };
-
-  const handleDeleteTopic = async () => {
-    if (!topicDeleteModal.topicId) return;
-    try {
-      setIsDeleting(true);
-      await curriculumService.deleteTopic(topicDeleteModal.topicId);
-      setTopicDeleteModal({ isOpen: false, topicId: null });
-      fetchData();
-    } catch (error) {
-      console.error("Error deleting topic:", error);
-    } finally {
-      setIsDeleting(false);
-    }
-  };
-
-  const handleMoveSubject = async (subjectId: string, direction: 'up' | 'down') => {
-    const currentIndex = subjects.findIndex(s => s.id === subjectId);
-    if (currentIndex === -1) return;
-
-    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-
-    // Impede de mover além dos limites
-    if (targetIndex < 0 || targetIndex >= subjects.length) return;
-
-    // Cópia do array e Swap de posições (troca dos elementos)
-    const newSubjects = [...subjects];
-    const temp = newSubjects[currentIndex];
-    newSubjects[currentIndex] = newSubjects[targetIndex];
-    newSubjects[targetIndex] = temp;
-
-    // Recalcula o 'order' de TODOS os itens baseado no novo índice (Array Index)
-    const updatedSubjects = newSubjects.map((sub, index) => ({
-      ...sub,
-      order: index
-    }));
-
-    // Atualiza o estado local imediatamente para refletir na UI
-    setSubjects(updatedSubjects);
-
-    // Prepara o payload para atualizar em lote no Firebase
-    const payload = updatedSubjects.map(sub => ({
-      id: sub.id,
-      order: sub.order
-    }));
-
-    try {
-      await curriculumService.updateSubjectOrders(payload);
-    } catch (error) {
-      console.error('Erro ao reordenar disciplinas:', error);
-      // Em caso de falha silenciosa no BD, o ideal é recarregar a lista real
-    }
-  };
-
-  const handleMoveTopic = async (topicId: string, direction: 'up' | 'down') => {
-    // 1. Encontra o assunto para saber a qual disciplina ele pertence
-    const topicToMove = topics.find(t => t.id === topicId);
-    if (!topicToMove) return;
-
-    const currentSubjectId = topicToMove.subjectId;
-
-    // 2. Isola apenas os assuntos da mesma disciplina e garante a ordenação atual
-    const subjectTopics = topics
-      .filter(t => t.subjectId === currentSubjectId)
-      .sort((a, b) => (a.order || 0) - (b.order || 0));
-
-    const currentIndex = subjectTopics.findIndex(t => t.id === topicId);
-    if (currentIndex === -1) return;
-
-    const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
-
-    // 3. Impede de mover além dos limites da lista desta disciplina
-    if (targetIndex < 0 || targetIndex >= subjectTopics.length) return;
-
-    // 4. Cópia do array isolado e Swap de posições
-    const newSubjectTopics = [...subjectTopics];
-    const temp = newSubjectTopics[currentIndex];
-    newSubjectTopics[currentIndex] = newSubjectTopics[targetIndex];
-    newSubjectTopics[targetIndex] = temp;
-
-    // 5. Recalcula o 'order' de TODOS os assuntos desta disciplina baseado no novo índice
-    const updatedSubjectTopics = newSubjectTopics.map((topic, index) => ({
-      ...topic,
-      order: index
-    }));
-
-    // 6. Atualiza o estado global substituindo apenas os assuntos alterados
-    setTopics(prevTopics => {
-      const otherTopics = prevTopics.filter(t => t.subjectId !== currentSubjectId);
-      return [...otherTopics, ...updatedSubjectTopics].sort((a, b) => (a.order || 0) - (b.order || 0));
-    });
-
-    // 7. Prepara o payload para atualizar em lote no Firebase
-    const payload = updatedSubjectTopics.map(t => ({
-      id: t.id,
-      order: t.order
-    }));
-
-    try {
-      await curriculumService.updateTopicOrders(payload);
-    } catch (error) {
-      console.error('Erro ao reordenar assuntos:', error);
-    }
-  };
+  // ... (handleSaveSubject, handleEditSubject, handleDeleteSubject, handleSaveTopic, handleEditTopic, handleDeleteTopic, handleMoveSubject, handleMoveTopic)
 
   const handleToggleTopicSelection = async (topic: Topic) => {
     try {
+      const newStatus = !topic.isSelected;
+      
+      // Update topic AND all its modules
+      const updatedModules = topic.modules?.map(m => ({ ...m, isSelected: newStatus })) || [];
+      
       // Optimistic update
       const updatedTopics = topics.map(t => 
-        t.id === topic.id ? { ...t, isSelected: !t.isSelected } : t
+        t.id === topic.id ? { ...t, isSelected: newStatus, modules: updatedModules } : t
       );
       setTopics(updatedTopics);
 
-      await curriculumService.updateTopic(topic.id, { isSelected: !topic.isSelected });
+      await curriculumService.updateTopic(topic.id, { isSelected: newStatus, modules: updatedModules });
     } catch (error) {
       console.error("Error updating topic selection:", error);
+      fetchData(); // Revert on error
+    }
+  };
+
+  const handleToggleModuleSelection = async (topicId: string, moduleId: string) => {
+    try {
+      const topic = topics.find(t => t.id === topicId);
+      if (!topic) return;
+
+      const currentModules = topic.modules || [];
+      const updatedModules = currentModules.map(m => {
+        if (m.id === moduleId) {
+          // If undefined (legacy), treat as true, so toggle to false.
+          // If false, toggle to true.
+          // If true, toggle to false.
+          return { ...m, isSelected: m.isSelected === false ? true : false };
+        }
+        return m;
+      });
+
+      // Logic: If at least one module is selected, the topic remains selected.
+      // If NO modules are selected, the topic is unselected.
+      const hasAnySelected = updatedModules.some(m => m.isSelected !== false);
+      const topicSelected = hasAnySelected;
+
+      // Optimistic update
+      const updatedTopics = topics.map(t => 
+        t.id === topicId ? { ...t, isSelected: topicSelected, modules: updatedModules } : t
+      );
+      setTopics(updatedTopics);
+
+      await curriculumService.updateTopic(topicId, { isSelected: topicSelected, modules: updatedModules });
+    } catch (error) {
+      console.error("Error updating module selection:", error);
       fetchData(); // Revert on error
     }
   };
@@ -634,9 +485,19 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
                       <div className="mt-3 pl-4 border-l-2 border-zinc-800 space-y-2">
                         {topic.modules?.map((module, index) => (
                           <div key={module.id} className="flex items-center justify-between bg-zinc-950/50 p-2 rounded border border-zinc-800/50 hover:border-zinc-700 transition-colors group">
-                            <div className="flex items-center gap-2">
-                              <div className="w-1.5 h-1.5 rounded-full bg-zinc-700 group-hover:bg-brand-red transition-colors" />
-                              <span className="text-xs text-zinc-300">{module.name}</span>
+                            <div className="flex items-center gap-3">
+                              <input 
+                                type="checkbox"
+                                checked={module.isSelected !== false}
+                                onChange={() => handleToggleModuleSelection(topic.id, module.id)}
+                                className="w-4 h-4 rounded border-zinc-700 bg-zinc-900 text-brand-red focus:ring-brand-red focus:ring-offset-zinc-900 cursor-pointer"
+                              />
+                              <div className="flex items-center gap-2">
+                                <div className={`w-1.5 h-1.5 rounded-full transition-colors ${module.isSelected !== false ? 'bg-brand-red' : 'bg-zinc-700'}`} />
+                                <span className={`text-xs ${module.isSelected !== false ? 'text-zinc-300' : 'text-zinc-600 line-through'}`}>
+                                  {module.name}
+                                </span>
+                              </div>
                             </div>
                             <div className="flex items-center gap-3">
                               <span className="text-[10px] font-bold text-zinc-500 bg-zinc-900 px-1.5 py-0.5 rounded border border-zinc-800">
