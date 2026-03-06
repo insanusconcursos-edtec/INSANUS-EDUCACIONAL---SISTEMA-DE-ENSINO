@@ -1,8 +1,10 @@
-import React, { useState, useMemo } from 'react';
-import { ClassScheduleEvent, ScheduleGap } from '../../../../../../types/schedule';
+import React, { useState, useMemo, useEffect } from 'react';
+import { ClassScheduleEvent, ScheduleGap, ScheduleException, ExceptionType } from '../../../../../../types/schedule';
 import { Teacher } from '../../../../../../types/teacher';
 import { Subject, Topic } from '../../../../../../types/curriculum';
 import { ChevronLeft, ChevronRight, Calendar as CalendarIcon, Clock, User, AlertTriangle, ChevronDown, ChevronUp, LayoutGrid, List, Edit2, X, Check } from 'lucide-react';
+
+import { checkTeacherAvailability } from '../../../../../../utils/scheduler/ResourceValidator';
 
 interface SchedulePreviewProps {
   events: ClassScheduleEvent[];
@@ -10,13 +12,97 @@ interface SchedulePreviewProps {
   teachers: Teacher[];
   subjects: Subject[];
   topics: Topic[];
-  onUpdateEvent?: (updatedEvent: ClassScheduleEvent) => void;
+  onAddException?: (exception: ScheduleException) => void;
 }
 
-export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ events, gaps, teachers, subjects, topics, onUpdateEvent }) => {
+export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ events, gaps, teachers, subjects, topics, onAddException }) => {
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
   const [expandedEventId, setExpandedEventId] = useState<string | null>(null);
   const [editingEvent, setEditingEvent] = useState<ClassScheduleEvent | null>(null);
+  const [selectedSubstituteId, setSelectedSubstituteId] = useState('');
+  const [actionType, setActionType] = useState<ExceptionType>('ALTERATION');
+  const [forceConfirmData, setForceConfirmData] = useState<{ teacherId: string, details: string } | null>(null);
+
+  const todayString = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().split('T')[0];
+
+  // Sync selected substitute when editing event changes
+  useEffect(() => {
+    if (editingEvent) {
+      setSelectedSubstituteId(editingEvent.teacherId || '');
+      setActionType('ALTERATION'); // Reset to default
+      setForceConfirmData(null);
+    }
+  }, [editingEvent]);
+
+  // Group teachers by availability
+  const { availableTeachers, unavailableTeachers } = useMemo(() => {
+    if (!editingEvent) return { availableTeachers: [], unavailableTeachers: [] };
+
+    const available: Teacher[] = [];
+    const unavailable: { teacher: Teacher, details: string }[] = [];
+
+    teachers.forEach(t => {
+      const availability = checkTeacherAvailability(t, editingEvent.date);
+      if (availability.isAvailable) {
+        available.push(t);
+      } else {
+        unavailable.push({ teacher: t, details: availability.details || 'Indisponível' });
+      }
+    });
+
+    return { availableTeachers: available, unavailableTeachers: unavailable };
+  }, [teachers, editingEvent]);
+
+  const handleSelectTeacher = (teacherId: string, isAvailable?: boolean, details?: string) => {
+    if (!teacherId) {
+      setSelectedSubstituteId('');
+      setForceConfirmData(null);
+      return;
+    }
+
+    // If it's the current teacher (if any), just select it
+    if (teacherId === editingEvent?.teacherId) {
+      setSelectedSubstituteId(teacherId);
+      setForceConfirmData(null);
+      return;
+    }
+
+    // Optimization: use passed values if present
+    if (isAvailable !== undefined) {
+      if (isAvailable) {
+        setSelectedSubstituteId(teacherId);
+        setForceConfirmData(null);
+      } else {
+        setForceConfirmData({ 
+          teacherId, 
+          details: details || 'Indisponível' 
+        });
+      }
+      return;
+    }
+
+    const teacher = teachers.find(t => t.id === teacherId);
+    if (!teacher || !editingEvent) return;
+
+    const availability = checkTeacherAvailability(teacher, editingEvent.date);
+
+    if (availability.isAvailable) {
+      setSelectedSubstituteId(teacherId);
+      setForceConfirmData(null);
+    } else {
+      setForceConfirmData({ 
+        teacherId, 
+        details: availability.details || 'Indisponível' 
+      });
+    }
+  };
+
+  const confirmForceTeacher = () => {
+    if (forceConfirmData) {
+      setSelectedSubstituteId(forceConfirmData.teacherId);
+      setForceConfirmData(null);
+    }
+  };
 
   // Determine the initial date based on the first event or current date
   const initialDate = useMemo(() => {
@@ -102,9 +188,22 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ events, gaps, 
   };
 
   const handleSaveEdit = () => {
-    if (editingEvent && onUpdateEvent) {
-      onUpdateEvent(editingEvent);
+    if (editingEvent && onAddException) {
+      const newException: ScheduleException = {
+        id: Date.now().toString(),
+        date: editingEvent.date,
+        meetingNumber: editingEvent.meetingNumber,
+        originalTeacherId: editingEvent.teacherId,
+        substituteTeacherId: actionType === 'CANCELLATION' ? undefined : selectedSubstituteId,
+        type: actionType
+      };
+      onAddException(newException);
       setEditingEvent(null);
+      setSelectedSubstituteId('');
+      setActionType('ALTERATION');
+    } else {
+        // If no change or no handler, just close
+        setEditingEvent(null);
     }
   };
 
@@ -274,8 +373,15 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ events, gaps, 
                     {cell.day}
                   </span>
                   {hasEvents && (
-                    <span className="text-[10px] font-bold text-brand-red bg-brand-red/10 px-1.5 py-0.5 rounded border border-brand-red/20 uppercase tracking-wide">
-                      Encontro #{dayEvents[0].meetingNumber}
+                    <span className={`
+                      text-[10px] font-bold px-1.5 py-0.5 rounded border uppercase tracking-wide
+                      ${dayEvents[0].isOverflow 
+                        ? 'bg-red-600 text-white border-red-500' 
+                        : 'text-brand-red bg-brand-red/10 border-brand-red/20'}
+                    `}>
+                      {dayEvents[0].isOverflow 
+                        ? `Encontro #${dayEvents[0].meetingNumber} (EXTRA)` 
+                        : `Encontro #${dayEvents[0].meetingNumber}`}
                     </span>
                   )}
                 </div>
@@ -299,6 +405,8 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ events, gaps, 
                       const isExpanded = expandedEventId === event.id;
                       const borderColor = subject?.color || '#52525b';
 
+                      const isOverflow = event.isOverflow;
+
                       return (
                         <React.Fragment key={event.id}>
                           <div 
@@ -309,13 +417,29 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ events, gaps, 
                             className={`
                               rounded-lg border-l-4 transition-all cursor-pointer overflow-hidden
                               ${isExpanded ? 'bg-zinc-800 shadow-lg ring-1 ring-zinc-700 z-20 relative' : 'bg-zinc-800/50 hover:bg-zinc-800'}
+                              ${isOverflow ? 'border-red-500 bg-red-900/20' : ''}
                             `}
                             style={{ borderLeftColor: borderColor }}
                           >
                             {/* Card Header */}
                             <div className="p-2">
-                              <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider mb-1">
-                                {index + 1}º Tempo
+                              <div className="flex justify-between items-center mb-1">
+                                <div className="text-[9px] font-bold text-zinc-500 uppercase tracking-wider">
+                                  {index + 1}º Tempo
+                                </div>
+                                <div className="flex gap-1">
+                                  {event.isSubstitute && (
+                                    <span className="text-[8px] font-bold text-black bg-yellow-500 px-1 py-0.5 rounded border border-yellow-600 uppercase tracking-wider flex items-center gap-1">
+                                      SUBSTITUIÇÃO
+                                    </span>
+                                  )}
+                                  {isOverflow && (
+                                    <span className="text-[8px] font-bold text-red-400 bg-red-950/50 px-1 py-0.5 rounded border border-red-900/50 uppercase tracking-wider flex items-center gap-1">
+                                      <AlertTriangle className="w-2 h-2" />
+                                      ⚠️ Além do limite da turma
+                                    </span>
+                                  )}
+                                </div>
                               </div>
                               <div className="flex justify-between items-start gap-2">
                                 <div className="flex-1 min-w-0">
@@ -368,7 +492,7 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ events, gaps, 
                                   className="w-full flex items-center justify-center gap-1.5 mt-2 py-1.5 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-[10px] font-bold uppercase rounded transition-colors"
                                 >
                                   <Edit2 className="w-3 h-3" />
-                                  Editar Aula
+                                  Gerenciar Encontro
                                 </button>
                               </div>
                             )}
@@ -431,7 +555,7 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ events, gaps, 
             <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-950/50">
               <h3 className="text-lg font-bold text-white flex items-center gap-2">
                 <Edit2 className="w-5 h-5 text-brand-red" />
-                Ajuste Manual de Aula
+                Gerenciar Encontro
               </h3>
               <button 
                 onClick={() => setEditingEvent(null)}
@@ -463,33 +587,137 @@ export const SchedulePreview: React.FC<SchedulePreviewProps> = ({ events, gaps, 
                     {getSubject(editingEvent.subjectId)?.name}
                   </span>
                 </div>
+                <div className="pt-2 border-t border-zinc-700/50 mt-2">
+                  <p className="text-[10px] text-zinc-400 italic text-center">
+                    * Atenção: Esta alteração será aplicada a todas as aulas (tempos) deste encontro.
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Type Selection */}
+              <div className="space-y-3">
+                <label className="text-xs font-bold text-zinc-500 uppercase block">Ação</label>
+                <div className="grid grid-cols-1 gap-2">
+                  <button
+                    onClick={() => setActionType('ALTERATION')}
+                    className={`p-3 rounded-lg border text-left transition-all ${actionType === 'ALTERATION' ? 'bg-zinc-800 border-brand-red ring-1 ring-brand-red' : 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800'}`}
+                  >
+                    <div className="font-medium text-sm text-white">Alterar Professor</div>
+                    <div className="text-xs text-zinc-500">Correção de erro no agendamento.</div>
+                  </button>
+                  
+                  <button
+                    onClick={() => setActionType('SUBSTITUTION')}
+                    disabled={editingEvent.date !== todayString}
+                    className={`p-3 rounded-lg border text-left transition-all ${actionType === 'SUBSTITUTION' ? 'bg-zinc-800 border-brand-red ring-1 ring-brand-red' : 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800'} ${editingEvent.date !== todayString ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  >
+                    <div className="font-medium text-sm text-white">Substituir (Apenas Hoje)</div>
+                    <div className="text-xs text-zinc-500">Gera custo adicional. Disponível apenas no dia da aula.</div>
+                  </button>
+
+                  <button
+                    onClick={() => setActionType('CANCELLATION')}
+                    className={`p-3 rounded-lg border text-left transition-all ${actionType === 'CANCELLATION' ? 'bg-zinc-800 border-brand-red ring-1 ring-brand-red' : 'bg-zinc-900 border-zinc-800 hover:bg-zinc-800'}`}
+                  >
+                    <div className="font-medium text-sm text-white">Cancelar Aula</div>
+                    <div className="text-xs text-zinc-500">Remove a aula e reajusta o cronograma.</div>
+                  </button>
+                </div>
               </div>
 
               {/* Teacher Selection */}
-              <div className="space-y-2">
-                <label className="text-sm font-medium text-zinc-300 block">
-                  Trocar Professor
-                </label>
-                <select
-                  value={editingEvent.teacherId || ''}
-                  onChange={(e) => setEditingEvent({
-                    ...editingEvent,
-                    teacherId: e.target.value,
-                    isSubstitute: true
-                  })}
-                  className="w-full bg-zinc-950 border border-zinc-800 rounded-lg px-3 py-2.5 text-white focus:ring-2 focus:ring-brand-red focus:border-transparent outline-none transition-all"
-                >
-                  <option value="">Selecione um professor...</option>
-                  {teachers.map(teacher => (
-                    <option key={teacher.id} value={teacher.id}>
-                      {teacher.name}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-zinc-500 mt-1">
-                  * Ao alterar o professor manualmente, esta aula será marcada como substituição.
-                </p>
-              </div>
+              {actionType !== 'CANCELLATION' && (
+                <div className="space-y-2 pt-2 border-t border-zinc-800">
+                  <label className="text-sm font-medium text-zinc-300 block">
+                    {actionType === 'SUBSTITUTION' ? 'Professor Substituto' : 'Novo Professor'}
+                  </label>
+                  
+                  <div className="max-h-48 overflow-y-auto border border-zinc-700 p-2 rounded bg-zinc-950/50">
+                    {/* Available Teachers */}
+                    {availableTeachers.length > 0 && (
+                      <div className="mb-3">
+                        <div className="text-xs font-bold text-emerald-500 uppercase mb-1 flex items-center gap-1">
+                          ✅ Professores Disponíveis
+                        </div>
+                        <div className="space-y-1">
+                          {availableTeachers.map(teacher => (
+                            <button
+                              key={teacher.id}
+                              onClick={() => handleSelectTeacher(teacher.id, true)}
+                              className={`w-full text-left px-2 py-1.5 rounded text-sm transition-colors flex items-center justify-between ${
+                                selectedSubstituteId === teacher.id 
+                                  ? 'bg-emerald-900/30 text-emerald-200 border border-emerald-800' 
+                                  : 'text-zinc-300 hover:bg-zinc-800'
+                              }`}
+                            >
+                              <span>{teacher.name}</span>
+                              {selectedSubstituteId === teacher.id && <Check className="w-3 h-3" />}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Unavailable Teachers */}
+                    {unavailableTeachers.length > 0 && (
+                      <div>
+                        <div className="text-xs font-bold text-red-500 uppercase mb-1 flex items-center gap-1">
+                          ❌ Professores Indisponíveis
+                        </div>
+                        <div className="space-y-1">
+                          {unavailableTeachers.map(({ teacher, details }) => (
+                            <button
+                              key={teacher.id}
+                              onClick={() => handleSelectTeacher(teacher.id, false, details)}
+                              className={`w-full text-left px-2 py-1.5 rounded text-sm transition-colors flex items-center justify-between opacity-75 hover:opacity-100 ${
+                                selectedSubstituteId === teacher.id 
+                                  ? 'bg-red-900/30 text-red-200 border border-red-800' 
+                                  : 'text-zinc-400 hover:bg-zinc-800'
+                              }`}
+                            >
+                              <span>{teacher.name}</span>
+                              {selectedSubstituteId === teacher.id && <Check className="w-3 h-3" />}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Force Schedule Alert */}
+                  {forceConfirmData && (
+                    <div className="bg-red-900/20 border border-red-500/50 p-3 rounded-lg animate-in slide-in-from-top-2">
+                      <div className="flex items-start gap-2 mb-3">
+                        <AlertTriangle className="w-4 h-4 text-red-500 shrink-0 mt-0.5" />
+                        <div className="text-xs text-red-200">
+                          <span className="font-bold block mb-0.5">Atenção: Este professor está indisponível.</span>
+                          Motivo: {forceConfirmData.details}
+                        </div>
+                      </div>
+                      <div className="flex gap-2 justify-end">
+                        <button
+                          onClick={() => setForceConfirmData(null)}
+                          className="px-3 py-1.5 text-xs font-medium text-zinc-400 hover:text-white bg-zinc-800 hover:bg-zinc-700 rounded transition-colors"
+                        >
+                          Cancelar
+                        </button>
+                        <button
+                          onClick={confirmForceTeacher}
+                          className="px-3 py-1.5 text-xs font-bold text-white bg-red-600 hover:bg-red-500 rounded shadow-sm transition-colors"
+                        >
+                          FORÇAR AGENDAMENTO
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {actionType === 'SUBSTITUTION' && (
+                    <p className="text-xs text-zinc-500 mt-1">
+                      * Ao alterar o professor manualmente, esta aula será marcada como substituição.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="p-4 border-t border-zinc-800 bg-zinc-950/50 flex justify-end gap-3">

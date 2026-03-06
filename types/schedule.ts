@@ -28,4 +28,30 @@ export interface ClassScheduleEvent {
   // Metadados para Lógica de Empuxo
   meetingNumber: number; // Ex: Encontro 1, Encontro 2
   classOrderIndex: number; // A ordem matemática desta aula dentro do currículo
+  isOverflow?: boolean; // Flag para indicar se o evento excede o limite original de encontros ou data
+}
+
+export type ExceptionType = 'SUBSTITUTION' | 'CANCELLATION' | 'ALTERATION';
+
+export interface ScheduleException {
+  id: string;
+  date: string;
+  meetingNumber?: number; // Identifica qual encontro do dia (1, 2, etc)
+  originalTeacherId?: string; // Para quem ia dar aula (opcional se for slot vazio)
+  substituteTeacherId?: string; // Quem vai assumir (apenas para substituição/alteração)
+  type: ExceptionType;
+}
+
+export interface ScheduleConflictData {
+  teacherId: string;
+  teacherName: string;
+  date: string;
+  subjectId: string;
+  meetingNumber: number;
+}
+
+export interface ScheduleAlert {
+  type: 'RED' | 'YELLOW';
+  message: string;
+  conflictData?: ScheduleConflictData; // Populado se houver conflito de professor no final de semana
 }

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { ArrowLeft, Calendar, Users, DollarSign, BookOpen, Clock } from 'lucide-react';
 import { classService } from '../../services/classService';
 import { curriculumService } from '../../services/curriculumService';
@@ -100,13 +100,14 @@ const PresentialClassManager: React.FC = () => {
     <div className="min-h-screen bg-black text-white p-6 space-y-6">
       {/* Header */}
       <div className="flex flex-col gap-6">
-        <button 
-          onClick={() => navigate('/admin/presential')}
+        <Link 
+          to="/admin/presencial" 
+          state={{ initialTab: 'CLASSES' }}
           className="flex items-center gap-2 text-zinc-400 hover:text-white transition-colors w-fit"
         >
           <ArrowLeft className="w-4 h-4" />
           Voltar para Turmas
-        </button>
+        </Link>
 
         <div className="flex flex-col md:flex-row gap-6 items-start md:items-center bg-zinc-900/50 border border-zinc-800 p-6 rounded-2xl">
           <div className="w-24 h-32 rounded-lg overflow-hidden bg-zinc-800 shrink-0 shadow-lg">

@@ -30,12 +30,94 @@ export const ClassScheduleForm: React.FC<ClassScheduleFormProps> = ({ data, onCh
     onChange({ daysOfWeek: newDays });
   };
 
-  const toggleWeekendDay = (day: number) => {
-    const currentDays = data.weekendDays || [];
-    const newDays = currentDays.includes(day)
-      ? currentDays.filter(d => d !== day)
-      : [...currentDays, day].sort();
-    onChange({ weekendDays: newDays });
+  const updateRegularWeekendConfig = (dayOfWeek: number, shift: ClassShift, checked: boolean, time?: string) => {
+    const currentConfigs = data.regularWeekendConfigs || [];
+    const dayConfigIndex = currentConfigs.findIndex(c => c.dayOfWeek === dayOfWeek);
+    
+    let newConfigs = [...currentConfigs];
+
+    if (dayConfigIndex === -1) {
+        if (checked) {
+            // Add new day config with the shift
+            newConfigs.push({
+                dayOfWeek,
+                shifts: [{ shift, startTime: time || '08:00' }]
+            });
+        }
+    } else {
+        const dayConfig = { ...newConfigs[dayConfigIndex] };
+        const shiftIndex = dayConfig.shifts.findIndex(s => s.shift === shift);
+
+        if (checked) {
+            if (shiftIndex === -1) {
+                // Add shift
+                dayConfig.shifts = [...dayConfig.shifts, { shift, startTime: time || '08:00' }];
+            } else if (time !== undefined) {
+                // Update time
+                const newShifts = [...dayConfig.shifts];
+                newShifts[shiftIndex] = { ...newShifts[shiftIndex], startTime: time };
+                dayConfig.shifts = newShifts;
+            }
+        } else {
+            // Remove shift
+            if (shiftIndex !== -1) {
+                dayConfig.shifts = dayConfig.shifts.filter(s => s.shift !== shift);
+            }
+        }
+
+        if (dayConfig.shifts.length === 0) {
+            newConfigs = newConfigs.filter((_, i) => i !== dayConfigIndex);
+        } else {
+            newConfigs[dayConfigIndex] = dayConfig;
+        }
+    }
+
+    onChange({ regularWeekendConfigs: newConfigs });
+  };
+
+  const updateWeekendConfig = (dayOfWeek: number, shift: ClassShift, checked: boolean, time?: string) => {
+    const currentConfigs = data.weekendConfigs || [];
+    const dayConfigIndex = currentConfigs.findIndex(c => c.dayOfWeek === dayOfWeek);
+    
+    let newConfigs = [...currentConfigs];
+
+    if (dayConfigIndex === -1) {
+        if (checked) {
+            // Add new day config with the shift
+            newConfigs.push({
+                dayOfWeek,
+                shifts: [{ shift, startTime: time || '08:00' }]
+            });
+        }
+    } else {
+        const dayConfig = { ...newConfigs[dayConfigIndex] };
+        const shiftIndex = dayConfig.shifts.findIndex(s => s.shift === shift);
+
+        if (checked) {
+            if (shiftIndex === -1) {
+                // Add shift
+                dayConfig.shifts = [...dayConfig.shifts, { shift, startTime: time || '08:00' }];
+            } else if (time !== undefined) {
+                // Update time
+                const newShifts = [...dayConfig.shifts];
+                newShifts[shiftIndex] = { ...newShifts[shiftIndex], startTime: time };
+                dayConfig.shifts = newShifts;
+            }
+        } else {
+            // Remove shift
+            if (shiftIndex !== -1) {
+                dayConfig.shifts = dayConfig.shifts.filter(s => s.shift !== shift);
+            }
+        }
+
+        if (dayConfig.shifts.length === 0) {
+            newConfigs = newConfigs.filter((_, i) => i !== dayConfigIndex);
+        } else {
+            newConfigs[dayConfigIndex] = dayConfig;
+        }
+    }
+
+    onChange({ weekendConfigs: newConfigs });
   };
 
   return (
@@ -166,6 +248,70 @@ export const ClassScheduleForm: React.FC<ClassScheduleFormProps> = ({ data, onCh
           )}
         </div>
 
+        {/* Configuração de Finais de Semana (REGULAR) */}
+        <div className="col-span-2 space-y-4 pt-4 border-t border-zinc-800">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <label className="text-sm font-bold text-white uppercase">
+                Aulas Regulares aos Finais de Semana
+              </label>
+            </div>
+          </div>
+
+          <div className="bg-zinc-800/30 p-4 rounded-xl border border-zinc-700/50 space-y-4 animate-in fade-in slide-in-from-top-2">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {WEEKEND_DAYS.map((day) => {
+                  const dayConfig = data.regularWeekendConfigs?.find(c => c.dayOfWeek === day.value);
+                  
+                  return (
+                      <div key={day.value} className="bg-zinc-900/50 p-4 rounded-lg border border-zinc-800">
+                          <h4 className="text-sm font-bold text-white uppercase mb-3">{day.label}</h4>
+                          <div className="space-y-3">
+                              {[
+                                  { value: 'MORNING', label: 'Manhã' },
+                                  { value: 'AFTERNOON', label: 'Tarde' },
+                                  { value: 'NIGHT', label: 'Noite' },
+                              ].map((shiftOption) => {
+                                  const shift = shiftOption.value as ClassShift;
+                                  const shiftConfig = dayConfig?.shifts.find(s => s.shift === shift);
+                                  const isChecked = !!shiftConfig;
+
+                                  return (
+                                      <div key={shift} className="flex flex-col gap-2">
+                                          <div className="flex items-center gap-2">
+                                              <input
+                                                  type="checkbox"
+                                                  id={`regular-weekend-${day.value}-${shift}`}
+                                                  checked={isChecked}
+                                                  onChange={(e) => updateRegularWeekendConfig(day.value, shift, e.target.checked)}
+                                                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-brand-red focus:ring-brand-red"
+                                              />
+                                              <label htmlFor={`regular-weekend-${day.value}-${shift}`} className="text-xs font-medium text-zinc-300 cursor-pointer select-none">
+                                                  {shiftOption.label}
+                                              </label>
+                                          </div>
+                                          
+                                          {isChecked && (
+                                              <div className="ml-6 animate-in fade-in slide-in-from-top-1">
+                                                  <input
+                                                      type="time"
+                                                      value={shiftConfig?.startTime || ''}
+                                                      onChange={(e) => updateRegularWeekendConfig(day.value, shift, true, e.target.value)}
+                                                      className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-white focus:border-brand-red"
+                                                  />
+                                              </div>
+                                          )}
+                                      </div>
+                                  );
+                              })}
+                          </div>
+                      </div>
+                  );
+              })}
+            </div>
+          </div>
+        </div>
+
         {/* Configuração de Finais de Semana (Reserva) */}
         <div className="col-span-2 space-y-4 pt-4 border-t border-zinc-800">
           <div className="flex items-center justify-between">
@@ -174,7 +320,7 @@ export const ClassScheduleForm: React.FC<ClassScheduleFormProps> = ({ data, onCh
                 type="checkbox"
                 id="allowWeekend"
                 checked={data.allowWeekend || false}
-                onChange={(e) => onChange({ allowWeekend: e.target.checked })}
+                onChange={(e) => onChange({ allowWeekend: e.target.checked, weekendConfigs: e.target.checked ? data.weekendConfigs : [] })}
                 className="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-brand-red focus:ring-brand-red"
               />
               <label htmlFor="allowWeekend" className="text-sm font-medium text-white cursor-pointer select-none">
@@ -185,40 +331,64 @@ export const ClassScheduleForm: React.FC<ClassScheduleFormProps> = ({ data, onCh
 
           {data.allowWeekend && (
             <div className="bg-zinc-800/30 p-4 rounded-xl border border-zinc-700/50 space-y-4 animate-in fade-in slide-in-from-top-2">
-              <div>
-                <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-2">Dias Disponíveis</label>
-                <div className="flex gap-2">
-                  {WEEKEND_DAYS.map((day) => (
-                    <button
-                      key={day.value}
-                      type="button"
-                      onClick={() => toggleWeekendDay(day.value)}
-                      className={`px-3 py-1.5 rounded text-[10px] font-bold uppercase transition-all border ${
-                        data.weekendDays?.includes(day.value)
-                          ? 'bg-zinc-200 text-zinc-900 border-zinc-200'
-                          : 'bg-zinc-800 text-zinc-500 border-zinc-600 hover:border-zinc-500'
-                      }`}
-                    >
-                      {day.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {WEEKEND_DAYS.map((day) => {
+                    const dayConfig = data.weekendConfigs?.find(c => c.dayOfWeek === day.value);
+                    
+                    return (
+                        <div key={day.value} className="bg-zinc-900/50 p-4 rounded-lg border border-zinc-800">
+                            <h4 className="text-sm font-bold text-white uppercase mb-3">{day.label}</h4>
+                            <div className="space-y-3">
+                                {[
+                                    { value: 'MORNING', label: 'Manhã' },
+                                    { value: 'AFTERNOON', label: 'Tarde' },
+                                    { value: 'NIGHT', label: 'Noite' },
+                                ].map((shiftOption) => {
+                                    const shift = shiftOption.value as ClassShift;
+                                    const shiftConfig = dayConfig?.shifts.find(s => s.shift === shift);
+                                    const isChecked = !!shiftConfig;
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[10px] font-bold text-zinc-500 uppercase mb-1">Turno Reserva</label>
-                  <select
-                    value={data.weekendShift || ''}
-                    onChange={(e) => onChange({ weekendShift: e.target.value as ClassShift })}
-                    className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-3 py-2 text-xs text-white focus:border-brand-red"
-                  >
-                    <option value="">Selecione...</option>
-                    <option value="MORNING">Manhã</option>
-                    <option value="AFTERNOON">Tarde</option>
-                    <option value="NIGHT">Noite</option>
-                  </select>
-                </div>
+                                    // Check if this slot is already taken by Regular Schedule
+                                    const isRegularlyScheduled = data.regularWeekendConfigs?.some(
+                                        c => c.dayOfWeek === day.value && c.shifts.some(s => s.shift === shift)
+                                    );
+
+                                    return (
+                                        <div key={shift} className="flex flex-col gap-2">
+                                            <div className="flex items-center gap-2">
+                                                <input
+                                                    type="checkbox"
+                                                    id={`weekend-${day.value}-${shift}`}
+                                                    checked={isChecked}
+                                                    disabled={isRegularlyScheduled}
+                                                    onChange={(e) => updateWeekendConfig(day.value, shift, e.target.checked)}
+                                                    className="w-4 h-4 rounded border-zinc-600 bg-zinc-700 text-brand-red focus:ring-brand-red disabled:opacity-50 disabled:cursor-not-allowed"
+                                                />
+                                                <label 
+                                                    htmlFor={`weekend-${day.value}-${shift}`} 
+                                                    className={`text-xs font-medium cursor-pointer select-none ${isRegularlyScheduled ? 'text-zinc-600 line-through' : 'text-zinc-300'}`}
+                                                >
+                                                    {shiftOption.label} {isRegularlyScheduled && '(Regular)'}
+                                                </label>
+                                            </div>
+                                            
+                                            {isChecked && (
+                                                <div className="ml-6 animate-in fade-in slide-in-from-top-1">
+                                                    <input
+                                                        type="time"
+                                                        value={shiftConfig?.startTime || ''}
+                                                        onChange={(e) => updateWeekendConfig(day.value, shift, true, e.target.value)}
+                                                        className="w-full bg-zinc-800 border border-zinc-700 rounded px-2 py-1 text-xs text-white focus:border-brand-red"
+                                                    />
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    );
+                })}
               </div>
             </div>
           )}

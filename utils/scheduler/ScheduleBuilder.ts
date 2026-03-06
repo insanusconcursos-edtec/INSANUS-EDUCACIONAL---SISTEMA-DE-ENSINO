@@ -1,9 +1,10 @@
 import { Class } from '../../types/class';
 import { Topic, Module } from '../../types/curriculum';
 import { Teacher } from '../../types/teacher';
-import { ClassScheduleEvent, ScheduleGap } from '../../types/schedule';
+import { ClassScheduleEvent, ScheduleGap, ScheduleException, ScheduleAlert } from '../../types/schedule';
 import { checkTeacherAvailability, checkGeographicLock, checkClassConflict } from './ResourceValidator';
 import { generateEmptySlots, TimeSlot } from './TimeSlotGenerator';
+import { addDays, parseISO, isAfter, getDay, differenceInDays } from 'date-fns';
 
 const generateId = (): string => {
   return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
@@ -23,8 +24,9 @@ export const buildSchedule = (
   classData: Class,
   selectedTopics: Topic[],
   teachers: Teacher[],
-  holidays: string[]
-): { events: ClassScheduleEvent[], gaps: ScheduleGap[] } => {
+  holidays: string[],
+  exceptions: ScheduleException[] = []
+): { events: ClassScheduleEvent[], gaps: ScheduleGap[], alert: ScheduleAlert | null } => {
   const schedule: ClassScheduleEvent[] = [];
   const gaps: ScheduleGap[] = [];
 
@@ -62,19 +64,69 @@ export const buildSchedule = (
     };
   });
 
+  const isTeacherWeekendOnly = (teacherId: string, teachers: Teacher[]): boolean => {
+    const teacher = teachers.find(t => t.id === teacherId);
+    if (!teacher) return false;
+    
+    const weekdays = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'];
+    const hasWeekdayAvailability = teacher.schedulePreferences.some(pref => 
+      weekdays.includes(pref.day as string)
+    );
+    
+    return !hasWeekdayAvailability;
+  };
+
   // Helper function to select best topic
   const selectBestTopicForDate = (
     dateString: string,
     startTime: string,
     endTime: string,
+    pool: TopicPoolItem[],
+    teachers: Teacher[],
     previousDaySubjectId: string | null,
-    currentMeetingSubjectId: string | null
+    currentMeetingSubjectId: string | null,
+    exceptions: ScheduleException[],
+    currentMeetingNumber: number
   ): TopicPoolItem | null => {
     // Filter candidates with remaining modules
     let candidates = pool.filter(p => p.remainingModules.length > 0);
 
+    // 1. Check for exceptions for today
+    // We check for exceptions that match the date AND (optionally) the meeting number
+    const exceptionForToday = exceptions.find(ex => 
+        ex.date === dateString && 
+        (ex.type === 'SUBSTITUTION' || ex.type === 'ALTERATION') &&
+        (!ex.meetingNumber || ex.meetingNumber === currentMeetingNumber)
+    );
+
+    if (exceptionForToday) {
+      // 2. Force Substitute
+      if (exceptionForToday.substituteTeacherId) {
+        const substituteCandidate = candidates.find(c => c.topic.teacherId === exceptionForToday.substituteTeacherId);
+        if (substituteCandidate) {
+          return substituteCandidate;
+        }
+      }
+
+      // 3. Block Original
+      if (exceptionForToday.originalTeacherId) {
+        candidates = candidates.filter(c => c.topic.teacherId !== exceptionForToday.originalTeacherId);
+      }
+    }
+
     // Filter by availability
     candidates = candidates.filter(candidate => {
+      // SEQUENTIAL BLOCKING: Check if there are earlier topics for the same subject that are still pending
+      // This ensures we finish Topic 1 before starting Topic 2 of the same Subject
+      const candidateIndex = pool.indexOf(candidate);
+      const hasPendingPreviousTopic = pool.some((p, index) => 
+        index < candidateIndex && 
+        p.topic.subjectId === candidate.topic.subjectId && 
+        p.remainingModules.length > 0
+      );
+
+      if (hasPendingPreviousTopic) return false;
+
       const teacherId = candidate.topic.teacherId;
       if (!teacherId) return false; // No teacher assigned
 
@@ -82,7 +134,7 @@ export const buildSchedule = (
       if (!teacher) return false;
 
       // Check basic availability (holidays, blocks)
-      if (!checkTeacherAvailability(teacher, dateString)) return false;
+      if (!checkTeacherAvailability(teacher, dateString).isAvailable) return false;
 
       // Check geographic lock
       // Assuming default city RIO_BRANCO for now as per original code
@@ -129,8 +181,22 @@ export const buildSchedule = (
         }
     }
 
-    // Sort by Equity (LRU - Least Recently Used)
+    // Sort by Equity (LRU - Least Recently Used) with Scarcity Boost
     preferredCandidates.sort((a, b) => {
+      const teacherIdA = a.topic.teacherId;
+      const teacherIdB = b.topic.teacherId;
+
+      // Note: teacherId is guaranteed to exist due to previous filter
+      if (!teacherIdA || !teacherIdB) return 0;
+
+      const aIsWeekendOnly = isTeacherWeekendOnly(teacherIdA, teachers);
+      const bIsWeekendOnly = isTeacherWeekendOnly(teacherIdB, teachers);
+
+      // Prioridade 1: Escassez (Fura-fila absoluto para professores de fim de semana)
+      if (aIsWeekendOnly && !bIsWeekendOnly) return -1;
+      if (!aIsWeekendOnly && bIsWeekendOnly) return 1;
+
+      // Prioridade 2: LRU (Quem deu aula há mais tempo)
       if (a.lastScheduledDate === null && b.lastScheduledDate === null) return 0;
       if (a.lastScheduledDate === null) return -1; // a comes first (never scheduled)
       if (b.lastScheduledDate === null) return 1; // b comes first
@@ -148,60 +214,145 @@ export const buildSchedule = (
   const slots = generateEmptySlots(classData, holidays);
 
   // 3. Allocation Loop
-  let meetingCounter = 0;
   let previousDaySubjectId: string | null = null;
+  let lastScheduledDate: string | null = null;
+  let pendingRecovery = 0;
   
-  // Group slots by date
-  const slotsByDate: Record<string, TimeSlot[]> = {};
+  // Group slots by meetingNumber (Encontro)
+  const slotsByMeeting: Record<number, TimeSlot[]> = {};
   slots.forEach(slot => {
-    if (!slotsByDate[slot.date]) slotsByDate[slot.date] = [];
-    slotsByDate[slot.date].push(slot);
+    if (!slotsByMeeting[slot.meetingNumber]) slotsByMeeting[slot.meetingNumber] = [];
+    slotsByMeeting[slot.meetingNumber].push(slot);
   });
 
-  // Iterate chronologically
-  const sortedDates = Object.keys(slotsByDate).sort();
+  // Iterate chronologically by meeting number
+  const sortedMeetingNumbers = Object.keys(slotsByMeeting).map(Number).sort((a, b) => a - b);
 
-  for (const dateString of sortedDates) {
+  for (const meetingNum of sortedMeetingNumbers) {
     // Check if we still have content to schedule
     if (!pool.some(p => p.remainingModules.length > 0)) break;
 
-    const daySlots = slotsByDate[dateString];
-    const dayEvents: ClassScheduleEvent[] = [];
+    const meetingSlots = slotsByMeeting[meetingNum];
+    const currentDate = meetingSlots[0].date;
+    const isReserveMeeting = meetingSlots[0].isReserve;
+
+    // --- Lógica de Reserva (Soldado de Reserva) ---
+    if (isReserveMeeting) {
+      let shouldSchedule = false;
+
+      // Exceção 1: Recuperação de Aulas
+      if (pendingRecovery > 0) {
+        shouldSchedule = true;
+      }
+
+      // Exceção 3: Risco de Estouro de Prazo (Hard Deadline)
+      if (!shouldSchedule && classData.hardDeadline) {
+        const daysToDeadline = differenceInDays(parseISO(classData.hardDeadline), parseISO(currentDate));
+        // Se faltam menos de 15 dias e ainda há conteúdo
+        if (daysToDeadline < 15 && pool.some(p => p.remainingModules.length > 0)) {
+          shouldSchedule = true;
+        }
+      }
+
+      // Exceção 2: Professor de Fim de Semana
+      if (!shouldSchedule) {
+        // Verifica se o melhor candidato para o primeiro slot é um professor "Weekend Only"
+        const testSlot = meetingSlots[0];
+        const bestTopic = selectBestTopicForDate(
+          currentDate,
+          testSlot.startTime,
+          testSlot.endTime,
+          pool,
+          teachers,
+          previousDaySubjectId,
+          null, // currentMeetingSubjectId is null at start of meeting
+          exceptions,
+          meetingNum
+        );
+
+        if (bestTopic) {
+          const teacher = teachers.find(t => t.id === bestTopic.topic.teacherId);
+          if (teacher) {
+            const weekdays = ['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'];
+            // Verifica se o professor tem alguma preferência (disponibilidade) durante a semana
+            const hasWeekdayPref = teacher.schedulePreferences.some(p => weekdays.includes(p.day));
+            // Se NÃO tem preferência de semana, ele é "Weekend Only", então devemos agendar
+            if (!hasWeekdayPref) {
+              shouldSchedule = true;
+            }
+          }
+        }
+      }
+
+      if (!shouldSchedule) {
+        continue; // Pula este encontro reserva
+      }
+    }
+    
+    // Reset previousDaySubjectId if we moved to a new day
+    if (lastScheduledDate && lastScheduledDate !== currentDate) {
+        // We keep the previousDaySubjectId from the last meeting of the previous day
+        // No action needed here, the variable holds the correct value
+    }
+
+    const meetingEvents: ClassScheduleEvent[] = [];
     const topicsToUpdate = new Set<TopicPoolItem>();
     let currentMeetingSubjectId: string | null = null;
 
-    for (const slot of daySlots) {
+    for (const slot of meetingSlots) {
        // Check pool again inside slot loop (for optimization exception)
        if (!pool.some(p => p.remainingModules.length > 0)) break;
 
        const bestTopic = selectBestTopicForDate(
-           dateString, 
+           currentDate, 
            slot.startTime, 
            slot.endTime, 
+           pool,
+           teachers,
            previousDaySubjectId,
-           currentMeetingSubjectId
+           currentMeetingSubjectId,
+           exceptions,
+           meetingNum
        );
 
        if (bestTopic) {
           const moduleItem = bestTopic.remainingModules.shift()!;
           topicsToUpdate.add(bestTopic);
 
-          // Update current meeting subject for continuity in next slot
+          // Update current meeting subject for continuity in next slot of SAME meeting
           currentMeetingSubjectId = bestTopic.topic.subjectId;
 
-          dayEvents.push({
+          // Calculate Overflow Status
+          const isMeetingOverflow = meetingNum > classData.totalMeetings;
+          const isDateOverflow = classData.endDate 
+             ? new Date(currentDate + 'T00:00:00') > new Date(classData.endDate + 'T00:00:00') 
+             : false;
+           
+          const isOverflowing = isMeetingOverflow || isDateOverflow;
+
+          // Check for substitution (Only mark as substitute if type is SUBSTITUTION)
+          const exceptionForToday = exceptions.find(ex => 
+            ex.date === currentDate && 
+            (ex.type === 'SUBSTITUTION' || ex.type === 'ALTERATION') &&
+            (!ex.meetingNumber || ex.meetingNumber === meetingNum)
+          );
+          
+          const isSubstitute = exceptionForToday?.type === 'SUBSTITUTION';
+
+          meetingEvents.push({
+            isOverflow: isOverflowing,
             id: generateId(),
             classId: classData.id,
-            date: dateString,
+            date: currentDate,
             startTime: slot.startTime,
             endTime: slot.endTime,
             subjectId: bestTopic.topic.subjectId,
             topicId: bestTopic.topic.id,
             moduleId: moduleItem.module.id,
             teacherId: bestTopic.topic.teacherId!,
-            isSubstitute: false,
+            isSubstitute: isSubstitute,
             status: 'SCHEDULED',
-            meetingNumber: 0, // Will be set later
+            meetingNumber: meetingNum,
             classOrderIndex: 0 // Will be set later
           });
        } else {
@@ -216,26 +367,109 @@ export const buildSchedule = (
        }
     }
 
-    if (dayEvents.length > 0) {
-       meetingCounter++;
+    if (meetingEvents.length > 0) {
        // Finalize events
-       dayEvents.forEach((event, index) => {
-         event.meetingNumber = meetingCounter;
+       meetingEvents.forEach((event, index) => {
          event.classOrderIndex = schedule.length + index + 1;
        });
-       schedule.push(...dayEvents);
+       schedule.push(...meetingEvents);
 
        // Update LRU dates
        topicsToUpdate.forEach(topic => {
-         topic.lastScheduledDate = dateString;
+         topic.lastScheduledDate = currentDate;
        });
 
-       // Update previousDaySubjectId for the NEXT day based on the LAST event of TODAY
+       // Update tracking for next iteration
+       lastScheduledDate = currentDate;
+       
+       // The subject of this meeting becomes the "previous" for the next meeting
        if (currentMeetingSubjectId) {
            previousDaySubjectId = currentMeetingSubjectId;
        }
+
+       // Se usamos um slot reserva para recuperação, diminuímos a dívida
+       if (isReserveMeeting && pendingRecovery > 0) {
+         pendingRecovery--;
+       }
+    } else {
+      // Se falhamos em agendar um encontro REGULAR (gerou gaps ou nada), aumentamos a dívida
+      if (!isReserveMeeting) {
+        pendingRecovery++;
+      }
     }
   }
 
-  return { events: schedule, gaps };
+  // --- Lógica de Auditoria Final (Alertas) ---
+  let scheduleAlert: ScheduleAlert | null = null;
+  const lastEvent = schedule[schedule.length - 1];
+
+  if (lastEvent) {
+    const projectedEndDate = parseISO(lastEvent.date);
+
+    // 1. Verificação de Limites (Hard Deadline)
+    if (classData.type === 'POS_EDITAL' && classData.hardDeadline) {
+      const hardDeadlineDate = parseISO(classData.hardDeadline);
+      if (isAfter(projectedEndDate, hardDeadlineDate)) {
+        scheduleAlert = {
+          type: 'RED',
+          message: 'Alerta Crítico: O cronograma ultrapassou a Data Limite Inegociável da turma. Ajustes manuais ou aulas em contraturno são obrigatórios.'
+        };
+      }
+    }
+
+    // 2. Verificação de Limites (Soft Deadline)
+    // Só verifica se não houver alerta vermelho prévio
+    if (!scheduleAlert && (classData.type === 'PRE_EDITAL' || classData.modality === 'REGULAR') && classData.softDeadlineMargin && classData.endDate) {
+      const originalEndDate = parseISO(classData.endDate);
+      const marginDays = classData.softDeadlineMargin;
+      const extendedDeadline = addDays(originalEndDate, marginDays);
+
+      if (isAfter(projectedEndDate, extendedDeadline)) {
+        scheduleAlert = {
+          type: 'YELLOW',
+          message: 'Aviso: O cronograma excedeu a margem de tolerância da data de término prevista.'
+        };
+      }
+    }
+  }
+
+  // 3. Verificação de Conflito de Final de Semana
+  // Busca qualquer aula agendada no Sábado (6) ou Domingo (0)
+  const weekendConflictEvent = schedule.find(ev => {
+    const date = parseISO(ev.date);
+    const day = getDay(date);
+    return day === 0 || day === 6;
+  });
+
+  if (weekendConflictEvent) {
+    const teacher = teachers.find(t => t.id === weekendConflictEvent.teacherId);
+    if (teacher) {
+      const date = parseISO(weekendConflictEvent.date);
+      const day = getDay(date);
+      const isSaturday = day === 6;
+      const isSunday = day === 0;
+
+      // Verifica disponibilidade específica
+      const isAvailable = isSaturday 
+        ? teacher.availableWeekends?.saturday 
+        : (isSunday ? teacher.availableWeekends?.sunday : false);
+
+      if (!isAvailable) {
+        // Sobrescreve qualquer alerta anterior com este conflito crítico
+        scheduleAlert = {
+          type: 'RED',
+          message: 'Conflito de Regras: Uma aula foi realocada para o final de semana, mas o professor escalado não possui disponibilidade neste período.',
+          conflictData: {
+            teacherId: teacher.id || '',
+            teacherName: teacher.name,
+            date: weekendConflictEvent.date,
+            subjectId: weekendConflictEvent.subjectId,
+            meetingNumber: weekendConflictEvent.meetingNumber
+          }
+        };
+      }
+    }
+  }
+
+  return { events: schedule, gaps, alert: scheduleAlert };
 };

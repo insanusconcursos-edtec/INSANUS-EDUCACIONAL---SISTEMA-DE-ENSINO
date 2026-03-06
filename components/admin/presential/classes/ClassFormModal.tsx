@@ -28,7 +28,7 @@ const INITIAL_DATA: Partial<Class> = {
   startTime: '',
   daysOfWeek: [],
   allowWeekend: false,
-  weekendDays: [],
+  weekendConfigs: [],
   startDate: '',
   holidaysOff: true,
   status: 'SALES_OPEN',

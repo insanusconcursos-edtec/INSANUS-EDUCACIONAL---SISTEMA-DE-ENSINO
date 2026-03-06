@@ -1,14 +1,20 @@
 import { Teacher } from '../../types/teacher';
 import { ClassScheduleEvent } from '../../types/schedule';
 
-export const checkTeacherAvailability = (teacher: Teacher, date: string): boolean => {
+export interface AvailabilityResult {
+  isAvailable: boolean;
+  reason?: 'BLOCK_DATE' | 'WEEKEND_UNAVAILABLE' | 'WEEKDAY_UNAVAILABLE' | 'NO_PREFERENCE';
+  details?: string;
+}
+
+export const checkTeacherAvailability = (teacher: Teacher, date: string): AvailabilityResult => {
   // 1. Check Unavailabilities (Block dates)
   if (teacher.unavailabilities && teacher.unavailabilities.length > 0) {
     const targetDate = new Date(date + 'T00:00:00');
     
-    const isUnavailable = teacher.unavailabilities.some(unavailability => {
-      const start = new Date(unavailability.startDate);
-      const end = new Date(unavailability.endDate);
+    const unavailability = teacher.unavailabilities.find(u => {
+      const start = new Date(u.startDate);
+      const end = new Date(u.endDate);
       
       // Normalize dates to ignore time components for day-level blocking
       const targetTime = targetDate.getTime();
@@ -18,8 +24,12 @@ export const checkTeacherAvailability = (teacher: Teacher, date: string): boolea
       return targetTime >= startTime && targetTime <= endTime;
     });
 
-    if (isUnavailable) {
-      return false;
+    if (unavailability) {
+      return {
+        isAvailable: false,
+        reason: 'BLOCK_DATE',
+        details: `Bloqueio de agenda (${unavailability.type}${unavailability.reason ? ': ' + unavailability.reason : ''})`
+      };
     }
   }
 
@@ -32,12 +42,20 @@ export const checkTeacherAvailability = (teacher: Teacher, date: string): boolea
   if (dayOfWeek === 6) { // Saturday
     // If availableWeekends is undefined, assume false (unavailable)
     if (!teacher.availableWeekends?.saturday) {
-      return false;
+      return {
+        isAvailable: false,
+        reason: 'WEEKEND_UNAVAILABLE',
+        details: 'Não ministra aulas aos finais de semana'
+      };
     }
   } else if (dayOfWeek === 0) { // Sunday
     // If availableWeekends is undefined, assume false (unavailable)
     if (!teacher.availableWeekends?.sunday) {
-      return false;
+      return {
+        isAvailable: false,
+        reason: 'WEEKEND_UNAVAILABLE',
+        details: 'Não ministra aulas aos finais de semana'
+      };
     }
   } else {
     // Check Weekdays (1-5)
@@ -57,11 +75,15 @@ export const checkTeacherAvailability = (teacher: Teacher, date: string): boolea
     const hasPreference = teacher.schedulePreferences?.some(pref => pref.day === dayString);
     
     if (!hasPreference) {
-      return false;
+      return {
+        isAvailable: false,
+        reason: 'WEEKDAY_UNAVAILABLE',
+        details: 'Fora do dia/turno de preferência'
+      };
     }
   }
 
-  return true;
+  return { isAvailable: true };
 };
 
 export const checkGeographicLock = (

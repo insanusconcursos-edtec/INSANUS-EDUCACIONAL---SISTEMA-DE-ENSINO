@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Users, GraduationCap, MapPin } from 'lucide-react';
 import { TeacherList } from '../../../components/admin/presential/teachers/TeacherList';
 import { ClassroomList } from '../../../components/admin/presential/classrooms/ClassroomList';
@@ -7,7 +8,14 @@ import { ClassList } from '../../../components/admin/presential/classes/ClassLis
 type TabType = 'TEACHERS' | 'CLASSES' | 'CLASSROOMS';
 
 const PresentialClassesPage: React.FC = () => {
+  const location = useLocation();
   const [activeTab, setActiveTab] = useState<TabType>('TEACHERS');
+
+  useEffect(() => {
+    if (location.state && location.state.initialTab) {
+      setActiveTab(location.state.initialTab);
+    }
+  }, [location.state]);
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
