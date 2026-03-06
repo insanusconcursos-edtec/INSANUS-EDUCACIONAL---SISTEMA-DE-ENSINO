@@ -69,8 +69,168 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
   const meetingsBalance = cls.totalMeetings - meetingsConsumed;
   const isOverLimit = meetingsBalance < 0;
 
-  // Handlers
-  // ... (handleSaveSubject, handleEditSubject, handleDeleteSubject, handleSaveTopic, handleEditTopic, handleDeleteTopic, handleMoveSubject, handleMoveTopic)
+  const handleSaveSubject = async () => {
+    if (!newSubject.name) return;
+
+    try {
+      if (editingSubject) {
+        // Update
+        const updatedSubject = { ...editingSubject, ...newSubject };
+        setSubjects(prev => prev.map(s => s.id === editingSubject.id ? updatedSubject : s));
+        await curriculumService.updateSubject(editingSubject.id, newSubject);
+      } else {
+        // Create
+        const subjectData = {
+          classId: cls.id,
+          name: newSubject.name,
+          color: newSubject.color,
+          defaultTeacherId: newSubject.defaultTeacherId || undefined,
+          order: subjects.length
+        };
+        const id = await curriculumService.createSubject(subjectData);
+        setSubjects(prev => [...prev, { ...subjectData, id }]);
+      }
+      setIsModalOpen(false);
+      setEditingSubject(null);
+      setNewSubject({ name: '', color: '#EF4444', defaultTeacherId: '' });
+    } catch (error) {
+      console.error("Error saving subject:", error);
+      fetchData();
+    }
+  };
+
+  const handleEditSubject = (subject: Subject) => {
+    setEditingSubject(subject);
+    setNewSubject({
+      name: subject.name,
+      color: subject.color,
+      defaultTeacherId: subject.defaultTeacherId || ''
+    });
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteSubject = async () => {
+    if (!subjectDeleteModal.subjectId) return;
+    
+    try {
+      setIsDeleting(true);
+      await curriculumService.deleteSubject(subjectDeleteModal.subjectId);
+      setSubjects(prev => prev.filter(s => s.id !== subjectDeleteModal.subjectId));
+      setSubjectDeleteModal({ isOpen: false, subjectId: null });
+    } catch (error) {
+      console.error("Error deleting subject:", error);
+      fetchData();
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleSaveTopic = async () => {
+    if (!newTopic.name || !selectedSubjectId) return;
+
+    try {
+      if (editingTopic) {
+        // Update
+        const updatedTopic = { ...editingTopic, name: newTopic.name };
+        setTopics(prev => prev.map(t => t.id === editingTopic.id ? updatedTopic : t));
+        await curriculumService.updateTopic(editingTopic.id, { name: newTopic.name });
+      } else {
+        // Create
+        const topicData = {
+          classId: cls.id,
+          subjectId: selectedSubjectId,
+          name: newTopic.name,
+          order: topics.filter(t => t.subjectId === selectedSubjectId).length,
+          isSelected: true,
+          modules: []
+        };
+        const id = await curriculumService.createTopic(topicData);
+        setTopics(prev => [...prev, { ...topicData, id }]);
+      }
+      setIsTopicModalOpen(false);
+      setEditingTopic(null);
+      setNewTopic({ name: '', requiredClasses: 0 });
+    } catch (error) {
+      console.error("Error saving topic:", error);
+      fetchData();
+    }
+  };
+
+  const handleEditTopic = (topic: Topic) => {
+    setEditingTopic(topic);
+    setNewTopic({ name: topic.name, requiredClasses: 0 });
+    setSelectedSubjectId(topic.subjectId);
+    setIsTopicModalOpen(true);
+  };
+
+  const handleDeleteTopic = async () => {
+    if (!topicDeleteModal.topicId) return;
+
+    try {
+      await curriculumService.deleteTopic(topicDeleteModal.topicId);
+      setTopics(prev => prev.filter(t => t.id !== topicDeleteModal.topicId));
+      setTopicDeleteModal({ isOpen: false, topicId: null });
+    } catch (error) {
+      console.error("Error deleting topic:", error);
+      fetchData();
+    }
+  };
+
+  const handleMoveSubject = async (subjectId: string, direction: 'up' | 'down') => {
+    const index = subjects.findIndex(s => s.id === subjectId);
+    if (index === -1) return;
+    
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= subjects.length) return;
+
+    const newSubjects = [...subjects];
+    const temp = newSubjects[index];
+    newSubjects[index] = newSubjects[targetIndex];
+    newSubjects[targetIndex] = temp;
+
+    // Update orders locally
+    newSubjects.forEach((s, i) => s.order = i);
+    setSubjects(newSubjects);
+
+    try {
+      await curriculumService.updateSubjectOrders(newSubjects.map(s => ({ id: s.id, order: s.order || 0 })));
+    } catch (error) {
+      console.error("Error moving subject:", error);
+      fetchData();
+    }
+  };
+
+  const handleMoveTopic = async (topicId: string, direction: 'up' | 'down') => {
+    const topic = topics.find(t => t.id === topicId);
+    if (!topic) return;
+
+    const subjectTopics = topics.filter(t => t.subjectId === topic.subjectId).sort((a, b) => (a.order || 0) - (b.order || 0));
+    const index = subjectTopics.findIndex(t => t.id === topicId);
+    if (index === -1) return;
+
+    const targetIndex = direction === 'up' ? index - 1 : index + 1;
+    if (targetIndex < 0 || targetIndex >= subjectTopics.length) return;
+
+    const newSubjectTopics = [...subjectTopics];
+    const temp = newSubjectTopics[index];
+    newSubjectTopics[index] = newSubjectTopics[targetIndex];
+    newSubjectTopics[targetIndex] = temp;
+
+    // Update orders locally for this subset
+    newSubjectTopics.forEach((t, i) => t.order = i);
+
+    // Merge back into main topics list
+    const otherTopics = topics.filter(t => t.subjectId !== topic.subjectId);
+    const newTopics = [...otherTopics, ...newSubjectTopics];
+    setTopics(newTopics);
+
+    try {
+      await curriculumService.updateTopicOrders(newSubjectTopics.map(t => ({ id: t.id, order: t.order || 0 })));
+    } catch (error) {
+      console.error("Error moving topic:", error);
+      fetchData();
+    }
+  };
 
   const handleToggleTopicSelection = async (topic: Topic) => {
     try {

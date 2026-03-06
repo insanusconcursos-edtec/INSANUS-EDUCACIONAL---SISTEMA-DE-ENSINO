@@ -1,8 +1,19 @@
+export type ContentType = 'PDF' | 'LINK';
+
+export interface ModuleContent {
+  id: string;
+  type: ContentType;
+  title: string;
+  url: string;
+  createdAt: string;
+}
+
 export interface Module {
   id: string;
   name: string;
   classesCount: number;
   isSelected?: boolean;
+  contents?: ModuleContent[];
 }
 
 export interface Subject {

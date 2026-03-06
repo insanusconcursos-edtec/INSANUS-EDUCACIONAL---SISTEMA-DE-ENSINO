@@ -1,15 +1,19 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Calendar, Users, DollarSign, BookOpen, Clock } from 'lucide-react';
+import { ArrowLeft, Calendar, Users, DollarSign, BookOpen, Clock, LayoutDashboard, Monitor } from 'lucide-react';
 import { classService } from '../../services/classService';
 import { curriculumService } from '../../services/curriculumService';
 import { teacherService } from '../../services/teacherService';
+import { classScheduleService } from '../../services/classScheduleService';
 import { Class } from '../../types/class';
-import { Topic, Subject } from '../../types/curriculum';
+import { Topic, Subject, Module } from '../../types/curriculum';
 import { Teacher } from '../../types/teacher';
+import { ClassScheduleEvent } from '../../types/schedule';
 import { RemunerationTab } from '../../components/admin/presential/classes/manager/RemunerationTab';
 import { SubjectsTab } from '../../components/admin/presential/classes/manager/SubjectsTab';
 import { ScheduleTab } from '../../components/admin/presential/classes/manager/ScheduleTab';
+import { PedagogicalPlanning } from '../../components/admin/presential/classes/manager/planning/PedagogicalPlanning';
+import { TeachingEnvironment } from '../../components/admin/presential/classes/manager/teaching/TeachingEnvironment';
 import { formatSafeDateLocal } from '../../utils/dateUtils';
 
 const PresentialClassManager: React.FC = () => {
@@ -20,23 +24,30 @@ const PresentialClassManager: React.FC = () => {
   const [topics, setTopics] = useState<Topic[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [scheduleEvents, setScheduleEvents] = useState<ClassScheduleEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
+
+  const modules = useMemo(() => {
+    return topics.flatMap(t => t.modules || []);
+  }, [topics]);
 
   const fetchData = async () => {
     if (!classId) return;
     try {
       setLoading(true);
-      const [classData, topicsData, subjectsData, teachersData] = await Promise.all([
+      const [classData, topicsData, subjectsData, teachersData, eventsData] = await Promise.all([
         classService.getClassById(classId),
         curriculumService.getTopicsByClass(classId),
         curriculumService.getSubjectsByClass(classId),
-        teacherService.getTeachers()
+        teacherService.getTeachers(),
+        classScheduleService.getScheduleEventsByClass(classId)
       ]);
       setCurrentClass(classData);
       setTopics(topicsData);
       setSubjects(subjectsData);
       setTeachers(teachersData);
+      setScheduleEvents(eventsData);
     } catch (error) {
       console.error("Error fetching class data:", error);
     } finally {
@@ -88,6 +99,32 @@ const PresentialClassManager: React.FC = () => {
             subjects={subjects} 
             teachers={teachers} 
           />
+        );
+      case 'TEACHING':
+        return (
+          <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="mb-4">
+              <h2 className="text-xl font-bold text-white">Ambiente de Ensino Virtual</h2>
+              <p className="text-sm text-gray-400">Gerencie os recursos online, módulos, vídeos e PDFs que ficarão disponíveis para os alunos desta turma presencial.</p>
+            </div>
+            <TeachingEnvironment classId={currentClass.id} />
+          </div>
+        );
+      case 'PLANNING':
+        return (
+          <div className="space-y-6 animate-in fade-in duration-500">
+            <div className="mb-4">
+              <h2 className="text-xl font-bold text-white">Planejamento Pedagógico (Edital Verticalizado)</h2>
+              <p className="text-sm text-zinc-400">Acompanhe a estrutura do curso, materiais e o status das aulas agendadas.</p>
+            </div>
+            <PedagogicalPlanning 
+              subjects={subjects} 
+              topics={topics} 
+              modules={modules} 
+              events={scheduleEvents} 
+              teachers={teachers} 
+            />
+          </div>
         );
       case 'students':
         return <div className="p-6 text-white">Aba de Alunos em construção...</div>;
@@ -151,6 +188,8 @@ const PresentialClassManager: React.FC = () => {
             { id: 'remuneration', label: 'Remuneração', icon: <DollarSign className="w-4 h-4" /> },
             { id: 'subjects', label: 'Disciplinas', icon: <BookOpen className="w-4 h-4" /> },
             { id: 'schedule', label: 'Cronograma', icon: <Calendar className="w-4 h-4" /> },
+            { id: 'PLANNING', label: 'Planejamento', icon: <LayoutDashboard className="w-4 h-4" /> },
+            { id: 'TEACHING', label: 'Ambiente de Ensino', icon: <Monitor className="w-4 h-4" /> },
             { id: 'students', label: 'Alunos', icon: <Users className="w-4 h-4" /> },
           ].map((tab) => (
             <button
