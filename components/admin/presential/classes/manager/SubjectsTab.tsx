@@ -8,9 +8,10 @@ import { teacherService } from '../../../../../services/teacherService';
 
 interface SubjectsTabProps {
   cls: Class;
+  onUpdate?: () => Promise<void> | void;
 }
 
-export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
+export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls, onUpdate }) => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [teachers, setTeachers] = useState<Teacher[]>([]);
@@ -93,6 +94,8 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
       setIsModalOpen(false);
       setEditingSubject(null);
       setNewSubject({ name: '', color: '#EF4444', defaultTeacherId: '' });
+
+      if (onUpdate) await onUpdate();
     } catch (error) {
       console.error("Error saving subject:", error);
       fetchData();
@@ -117,6 +120,8 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
       await curriculumService.deleteSubject(subjectDeleteModal.subjectId);
       setSubjects(prev => prev.filter(s => s.id !== subjectDeleteModal.subjectId));
       setSubjectDeleteModal({ isOpen: false, subjectId: null });
+
+      if (onUpdate) await onUpdate();
     } catch (error) {
       console.error("Error deleting subject:", error);
       fetchData();
@@ -150,6 +155,8 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
       setIsTopicModalOpen(false);
       setEditingTopic(null);
       setNewTopic({ name: '', requiredClasses: 0 });
+
+      if (onUpdate) await onUpdate();
     } catch (error) {
       console.error("Error saving topic:", error);
       fetchData();
@@ -170,6 +177,8 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
       await curriculumService.deleteTopic(topicDeleteModal.topicId);
       setTopics(prev => prev.filter(t => t.id !== topicDeleteModal.topicId));
       setTopicDeleteModal({ isOpen: false, topicId: null });
+
+      if (onUpdate) await onUpdate();
     } catch (error) {
       console.error("Error deleting topic:", error);
       fetchData();
@@ -194,6 +203,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
 
     try {
       await curriculumService.updateSubjectOrders(newSubjects.map(s => ({ id: s.id, order: s.order || 0 })));
+      if (onUpdate) await onUpdate();
     } catch (error) {
       console.error("Error moving subject:", error);
       fetchData();
@@ -226,6 +236,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
 
     try {
       await curriculumService.updateTopicOrders(newSubjectTopics.map(t => ({ id: t.id, order: t.order || 0 })));
+      if (onUpdate) await onUpdate();
     } catch (error) {
       console.error("Error moving topic:", error);
       fetchData();
@@ -246,6 +257,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
       setTopics(updatedTopics);
 
       await curriculumService.updateTopic(topic.id, { isSelected: newStatus, modules: updatedModules });
+      if (onUpdate) await onUpdate();
     } catch (error) {
       console.error("Error updating topic selection:", error);
       fetchData(); // Revert on error
@@ -280,6 +292,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
       setTopics(updatedTopics);
 
       await curriculumService.updateTopic(topicId, { isSelected: topicSelected, modules: updatedModules });
+      if (onUpdate) await onUpdate();
     } catch (error) {
       console.error("Error updating module selection:", error);
       fetchData(); // Revert on error
@@ -296,6 +309,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
 
       // Send null to remove the field/set to null in Firestore
       await curriculumService.updateTopic(topicId, { teacherId: teacherId as any });
+      if (onUpdate) await onUpdate();
     } catch (error) {
       console.error("Error updating topic teacher:", error);
       fetchData(); // Revert on error
@@ -317,6 +331,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
       await Promise.all(subjectTopics.map(t => 
         curriculumService.updateTopic(t.id, { teacherId: null as any })
       ));
+      if (onUpdate) await onUpdate();
     } catch (error) {
       console.error("Error bulk updating teachers:", error);
       fetchData();
@@ -359,6 +374,8 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
       setIsModuleModalOpen(false);
       setEditingModule(null);
       setNewModule({ name: '', classesCount: 1 });
+
+      if (onUpdate) await onUpdate();
     } catch (error) {
       console.error("Error saving module:", error);
       fetchData(); // Revert on error
@@ -384,6 +401,8 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
       await curriculumService.updateTopic(moduleDeleteModal.topicId!, { modules: updatedModules });
       
       setModuleDeleteModal({ isOpen: false, topicId: null, moduleId: null });
+
+      if (onUpdate) await onUpdate();
     } catch (error) {
       console.error("Error deleting module:", error);
       fetchData(); // Revert on error
@@ -415,6 +434,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls }) => {
 
     try {
       await curriculumService.updateTopic(topicId, { modules: newModules });
+      if (onUpdate) await onUpdate();
     } catch (error) {
       console.error("Error moving module:", error);
       fetchData(); // Revert on error

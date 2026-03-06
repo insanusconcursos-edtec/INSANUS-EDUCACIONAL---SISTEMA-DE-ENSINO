@@ -1,24 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { Save, DollarSign, Calculator, AlertCircle, TrendingUp } from 'lucide-react';
+import { Save, DollarSign, Calculator, AlertCircle, TrendingUp, ChevronDown, ChevronUp } from 'lucide-react';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { Class } from '../../../../../types/class';
 import { Topic, Subject } from '../../../../../types/curriculum';
 import { Teacher } from '../../../../../types/teacher';
+import { ClassScheduleEvent } from '../../../../../types/schedule';
+import { FinancialReport } from '../../../../../types/financial';
 import { classService } from '../../../../../services/classService';
 import { curriculumService } from '../../../../../services/curriculumService';
-import { teacherService } from '../../../../../services/teacherService';
+import { calculateFinancialReport } from '../../../../../services/financialService';
 import { useFinancialCalculations } from '../../../../../hooks/useFinancialCalculations';
 
 interface RemunerationTabProps {
   cls: Class;
   onUpdate: () => void;
+  events: ClassScheduleEvent[];
+  teachers: Teacher[];
 }
 
-export const RemunerationTab: React.FC<RemunerationTabProps> = ({ cls, onUpdate }) => {
+export const RemunerationTab: React.FC<RemunerationTabProps> = ({ cls, onUpdate, events, teachers }) => {
   const [loading, setLoading] = useState(false);
   const [loadingData, setLoadingData] = useState(true);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  
+  const [report, setReport] = useState<FinancialReport | null>(null);
+  const [expandedTeacherId, setExpandedTeacherId] = useState<string | null>(null);
   
   const [config, setConfig] = useState({
     mode: cls.remunerationConfig?.mode || 'DYNAMIC',
@@ -33,14 +40,12 @@ export const RemunerationTab: React.FC<RemunerationTabProps> = ({ cls, onUpdate 
     const fetchData = async () => {
       try {
         setLoadingData(true);
-        const [topicsData, subjectsData, teachersData] = await Promise.all([
+        const [topicsData, subjectsData] = await Promise.all([
           curriculumService.getTopicsByClass(cls.id),
-          curriculumService.getSubjectsByClass(cls.id),
-          teacherService.getTeachers()
+          curriculumService.getSubjectsByClass(cls.id)
         ]);
         setTopics(topicsData);
         setSubjects(subjectsData);
-        setTeachers(teachersData);
       } catch (error) {
         console.error("Error fetching data for remuneration:", error);
       } finally {
@@ -49,6 +54,25 @@ export const RemunerationTab: React.FC<RemunerationTabProps> = ({ cls, onUpdate 
     };
     fetchData();
   }, [cls.id]);
+
+  // Calculate Financial Report whenever dependencies change
+  useEffect(() => {
+    if (cls && events && teachers) {
+      const liveClassData = { 
+        ...cls, 
+        remunerationConfig: {
+          mode: config.mode as 'DYNAMIC' | 'FIXED',
+          fixedHourlyRate: Number(config.fixedHourlyRate),
+          recordingCommission: Number(config.recordingCommission),
+          substitutionCommission: Number(config.substitutionCommission),
+          weekendCommission: Number(config.weekendCommission),
+        } 
+      } as Class;
+
+      const calculatedReport = calculateFinancialReport(liveClassData, events, teachers);
+      setReport(calculatedReport);
+    }
+  }, [cls, events, teachers, config]);
 
   // Calculate Projected Cost using the Hook
   // We pass a temporary class object with the CURRENT config state to get real-time updates
@@ -314,6 +338,122 @@ export const RemunerationTab: React.FC<RemunerationTabProps> = ({ cls, onUpdate 
           </div>
         </div>
       </div>
+      {/* Financial Dashboard */}
+      {report && (
+        <div className="col-span-1 lg:col-span-3 space-y-6 mt-8 border-t border-zinc-800 pt-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+            <h3 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
+                <TrendingUp className="w-6 h-6 text-brand-red" />
+                Dashboard Financeiro Detalhado
+            </h3>
+            
+            {/* Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Total Cost */}
+                <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl hover:border-zinc-700 transition-colors">
+                    <p className="text-zinc-400 text-xs font-bold uppercase mb-1">Custo Total Projetado</p>
+                    <p className="text-2xl font-black text-white">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(report.totalCost)}
+                    </p>
+                </div>
+                {/* Bonuses */}
+                <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl hover:border-zinc-700 transition-colors">
+                    <p className="text-zinc-400 text-xs font-bold uppercase mb-1">Total de Bônus e Adicionais</p>
+                    <p className="text-2xl font-black text-green-400">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                            report.monthlyData.reduce((acc, curr) => acc + curr.details.recording + curr.details.weekend + curr.details.substitution, 0)
+                        )}
+                    </p>
+                    <p className="text-[10px] text-zinc-500 mt-1">Gravações, Finais de Semana e Substituições</p>
+                </div>
+                {/* Discounts */}
+                <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl hover:border-zinc-700 transition-colors">
+                    <p className="text-zinc-400 text-xs font-bold uppercase mb-1">Descontos Aplicados</p>
+                    <p className="text-2xl font-black text-red-400">
+                        {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                             Math.abs(report.teacherReports.reduce((acc, curr) => acc + curr.breakdown.substitutionDeduction, 0))
+                        )}
+                    </p>
+                    <p className="text-[10px] text-zinc-500 mt-1">Penalidades por Substituição</p>
+                </div>
+            </div>
+
+            {/* Chart */}
+            <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-xl">
+                <h4 className="text-sm font-bold text-white mb-6">Evolução do Custo Mensal</h4>
+                <div className="h-64 w-full">
+                    <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={report.monthlyData}>
+                            <CartesianGrid strokeDasharray="3 3" stroke="#333" vertical={false} />
+                            <XAxis dataKey="month" stroke="#666" fontSize={12} tickLine={false} axisLine={false} />
+                            <YAxis stroke="#666" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(value) => `R$${value}`} />
+                            <Tooltip 
+                                contentStyle={{ backgroundColor: '#18181b', borderColor: '#27272a', borderRadius: '8px' }}
+                                itemStyle={{ color: '#fff' }}
+                                formatter={(value: number) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value)}
+                            />
+                            <Bar dataKey="total" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                    </ResponsiveContainer>
+                </div>
+            </div>
+
+            {/* Teacher Accordion */}
+            <div className="space-y-2">
+                <h4 className="text-sm font-bold text-white mb-4">Detalhamento por Professor</h4>
+                {report.teacherReports.map((teacherReport) => (
+                    <div key={teacherReport.teacherId} className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+                        <button 
+                            onClick={() => setExpandedTeacherId(expandedTeacherId === teacherReport.teacherId ? null : teacherReport.teacherId)}
+                            className="w-full flex items-center justify-between p-4 hover:bg-zinc-800/50 transition-colors"
+                        >
+                            <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-zinc-800 flex items-center justify-center text-xs font-bold text-zinc-400">
+                                    {teacherReport.name.charAt(0)}
+                                </div>
+                                <div className="text-left">
+                                    <p className="font-bold text-white text-sm">{teacherReport.name}</p>
+                                    <p className="text-xs text-zinc-500">{teacherReport.monthlyEarnings.length} meses com atividade</p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-4">
+                                <span className="font-bold text-white">
+                                    {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(teacherReport.totalEarnings)}
+                                </span>
+                                {expandedTeacherId === teacherReport.teacherId ? <ChevronUp className="w-4 h-4 text-zinc-500" /> : <ChevronDown className="w-4 h-4 text-zinc-500" />}
+                            </div>
+                        </button>
+                        
+                        {expandedTeacherId === teacherReport.teacherId && (
+                            <div className="p-4 bg-black/20 border-t border-zinc-800 text-sm animate-in slide-in-from-top-2">
+                                <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                                    <div>
+                                        <span className="block text-[10px] text-zinc-500 uppercase font-bold">Valor Base</span>
+                                        <span className="text-zinc-300">{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(teacherReport.breakdown.basePay)}</span>
+                                    </div>
+                                    <div>
+                                        <span className="block text-[10px] text-zinc-500 uppercase font-bold">Gravações</span>
+                                        <span className="text-green-400">+{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(teacherReport.breakdown.recordingBonus)}</span>
+                                    </div>
+                                    <div>
+                                        <span className="block text-[10px] text-zinc-500 uppercase font-bold">Fim de Semana</span>
+                                        <span className="text-green-400">+{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(teacherReport.breakdown.weekendBonus)}</span>
+                                    </div>
+                                    <div>
+                                        <span className="block text-[10px] text-zinc-500 uppercase font-bold">Substituições (Crédito)</span>
+                                        <span className="text-green-400">+{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(teacherReport.breakdown.substitutionBonus)}</span>
+                                    </div>
+                                    <div>
+                                        <span className="block text-[10px] text-zinc-500 uppercase font-bold">Substituições (Débito)</span>
+                                        <span className="text-red-400">-{new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(teacherReport.breakdown.substitutionDeduction)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </div>
+      )}
     </div>
   );
 };

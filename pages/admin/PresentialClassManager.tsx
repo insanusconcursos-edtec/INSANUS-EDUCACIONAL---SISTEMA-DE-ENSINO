@@ -88,9 +88,16 @@ const PresentialClassManager: React.FC = () => {
           </div>
         );
       case 'remuneration':
-        return <RemunerationTab cls={currentClass} onUpdate={fetchData} />;
+        return (
+          <RemunerationTab 
+            cls={currentClass} 
+            onUpdate={fetchData} 
+            events={scheduleEvents}
+            teachers={teachers}
+          />
+        );
       case 'subjects':
-        return <SubjectsTab cls={currentClass} />;
+        return <SubjectsTab cls={currentClass} onUpdate={fetchData} />;
       case 'schedule':
         return (
           <ScheduleTab 

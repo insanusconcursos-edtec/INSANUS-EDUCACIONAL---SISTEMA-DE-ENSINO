@@ -20,6 +20,7 @@ export interface ClassScheduleEvent {
   
   // Relacionamentos de Pessoal
   teacherId: string;
+  originalTeacherId?: string; // ID do professor que DEVERIA dar a aula (para aplicar o desconto)
   isSubstitute: boolean; // Flag para indicar se o professor foi alterado manualmente
   
   // Controle de Estado

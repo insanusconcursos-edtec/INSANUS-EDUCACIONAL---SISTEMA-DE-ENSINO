@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { Class } from '../../../../../types/class';
-import { Topic, Subject } from '../../../../../types/curriculum';
+import { Topic, Subject, Module } from '../../../../../types/curriculum';
 import { Teacher } from '../../../../../types/teacher';
 import { ClassScheduleEvent, ScheduleGap, ScheduleException, ScheduleAlert } from '../../../../../types/schedule';
 import { buildSchedule } from '../../../../../utils/scheduler/ScheduleBuilder';
 import { SchedulePreview } from './schedule/SchedulePreview';
 import { classScheduleService } from '../../../../../services/classScheduleService';
 import { holidayService } from '../../../../../services/holidayService';
+import { sanitizeSchedule } from '../../../../../utils/scheduler/ScheduleSynchronizer';
 import { Calendar, RefreshCw, Save, Loader2, CheckCircle, AlertTriangle, AlertOctagon } from 'lucide-react';
 
 interface ScheduleTabProps {
@@ -39,6 +40,27 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ cls, topics, subjects,
     fetchHolidays();
   }, []);
 
+  useEffect(() => {
+    const loadAndSanitize = async () => {
+      try {
+        const originalEvents = await classScheduleService.getScheduleEventsByClass(cls.id);
+        const activeModules = topics.flatMap(t => t.modules || []);
+        
+        const cleanEvents = sanitizeSchedule(originalEvents, topics, activeModules);
+        
+        if (cleanEvents.length !== originalEvents.length) {
+          setInstructionMessage("Atenção: A estrutura curricular foi alterada. Algumas aulas foram removidas pois seus tópicos/módulos não existem mais. Recomenda-se gerar um novo cronograma.");
+        }
+        
+        setGeneratedEvents(cleanEvents);
+      } catch (error) {
+        console.error("Error loading schedule:", error);
+      }
+    };
+    
+    loadAndSanitize();
+  }, [cls.id, topics]);
+
   const handleGenerateSchedule = async () => {
     setIsGenerating(true);
     setSaveMessage('');
@@ -48,7 +70,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ cls, topics, subjects,
     await new Promise(resolve => setTimeout(resolve, 500));
     
     try {
-      const { events, gaps, alert: generatedAlert } = buildSchedule(cls, topics, teachers, holidays, exceptions);
+      const { events, gaps, alert: generatedAlert } = buildSchedule(cls, topics, teachers, holidays, exceptions, subjects);
       setGeneratedEvents(events);
       setGeneratedGaps(gaps);
       setAlert(generatedAlert);
@@ -64,7 +86,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ cls, topics, subjects,
     setExceptions(prev => {
       const updatedExceptions = [...prev, newException];
       // Assim que a exceção é salva, forçamos a reconstrução do calendário passando o novo array
-      const { events, gaps, alert: generatedAlert } = buildSchedule(cls, topics, teachers, holidays, updatedExceptions);
+      const { events, gaps, alert: generatedAlert } = buildSchedule(cls, topics, teachers, holidays, updatedExceptions, subjects);
       setGeneratedEvents(events);
       setGeneratedGaps(gaps);
       setAlert(generatedAlert);

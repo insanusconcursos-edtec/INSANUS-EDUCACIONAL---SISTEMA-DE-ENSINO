@@ -1,5 +1,5 @@
 import { Class } from '../../types/class';
-import { Topic, Module } from '../../types/curriculum';
+import { Topic, Module, Subject } from '../../types/curriculum';
 import { Teacher } from '../../types/teacher';
 import { ClassScheduleEvent, ScheduleGap, ScheduleException, ScheduleAlert } from '../../types/schedule';
 import { checkTeacherAvailability, checkGeographicLock, checkClassConflict } from './ResourceValidator';
@@ -25,7 +25,8 @@ export const buildSchedule = (
   selectedTopics: Topic[],
   teachers: Teacher[],
   holidays: string[],
-  exceptions: ScheduleException[] = []
+  exceptions: ScheduleException[] = [],
+  subjects: Subject[]
 ): { events: ClassScheduleEvent[], gaps: ScheduleGap[], alert: ScheduleAlert | null } => {
   const schedule: ClassScheduleEvent[] = [];
   const gaps: ScheduleGap[] = [];
@@ -86,7 +87,8 @@ export const buildSchedule = (
     previousDaySubjectId: string | null,
     currentMeetingSubjectId: string | null,
     exceptions: ScheduleException[],
-    currentMeetingNumber: number
+    currentMeetingNumber: number,
+    subjects: Subject[]
   ): TopicPoolItem | null => {
     // Filter candidates with remaining modules
     let candidates = pool.filter(p => p.remainingModules.length > 0);
@@ -127,10 +129,12 @@ export const buildSchedule = (
 
       if (hasPendingPreviousTopic) return false;
 
-      const teacherId = candidate.topic.teacherId;
-      if (!teacherId) return false; // No teacher assigned
+      const subject = subjects.find(s => s.id === candidate.topic.subjectId);
+      const effectiveTeacherId = candidate.topic.teacherId || subject?.defaultTeacherId;
 
-      const teacher = teachers.find(t => t.id === teacherId);
+      if (!effectiveTeacherId) return false; // No teacher assigned
+
+      const teacher = teachers.find(t => t.id === effectiveTeacherId);
       if (!teacher) return false;
 
       // Check basic availability (holidays, blocks)
@@ -183,8 +187,11 @@ export const buildSchedule = (
 
     // Sort by Equity (LRU - Least Recently Used) with Scarcity Boost
     preferredCandidates.sort((a, b) => {
-      const teacherIdA = a.topic.teacherId;
-      const teacherIdB = b.topic.teacherId;
+      const subjectA = subjects.find(s => s.id === a.topic.subjectId);
+      const teacherIdA = a.topic.teacherId || subjectA?.defaultTeacherId;
+
+      const subjectB = subjects.find(s => s.id === b.topic.subjectId);
+      const teacherIdB = b.topic.teacherId || subjectB?.defaultTeacherId;
 
       // Note: teacherId is guaranteed to exist due to previous filter
       if (!teacherIdA || !teacherIdB) return 0;
@@ -217,6 +224,7 @@ export const buildSchedule = (
   let previousDaySubjectId: string | null = null;
   let lastScheduledDate: string | null = null;
   let pendingRecovery = 0;
+  let logicalMeetingCounter = 1;
   
   // Group slots by meetingNumber (Encontro)
   const slotsByMeeting: Record<number, TimeSlot[]> = {};
@@ -232,6 +240,7 @@ export const buildSchedule = (
     // Check if we still have content to schedule
     if (!pool.some(p => p.remainingModules.length > 0)) break;
 
+    let hasScheduledInThisMeeting = false;
     const meetingSlots = slotsByMeeting[meetingNum];
     const currentDate = meetingSlots[0].date;
     const isReserveMeeting = meetingSlots[0].isReserve;
@@ -267,7 +276,8 @@ export const buildSchedule = (
           previousDaySubjectId,
           null, // currentMeetingSubjectId is null at start of meeting
           exceptions,
-          meetingNum
+          logicalMeetingCounter,
+          subjects
         );
 
         if (bestTopic) {
@@ -312,7 +322,8 @@ export const buildSchedule = (
            previousDaySubjectId,
            currentMeetingSubjectId,
            exceptions,
-           meetingNum
+           logicalMeetingCounter,
+           subjects
        );
 
        if (bestTopic) {
@@ -323,7 +334,7 @@ export const buildSchedule = (
           currentMeetingSubjectId = bestTopic.topic.subjectId;
 
           // Calculate Overflow Status
-          const isMeetingOverflow = meetingNum > classData.totalMeetings;
+          const isMeetingOverflow = logicalMeetingCounter > classData.totalMeetings;
           const isDateOverflow = classData.endDate 
              ? new Date(currentDate + 'T00:00:00') > new Date(classData.endDate + 'T00:00:00') 
              : false;
@@ -334,7 +345,7 @@ export const buildSchedule = (
           const exceptionForToday = exceptions.find(ex => 
             ex.date === currentDate && 
             (ex.type === 'SUBSTITUTION' || ex.type === 'ALTERATION') &&
-            (!ex.meetingNumber || ex.meetingNumber === meetingNum)
+            (!ex.meetingNumber || ex.meetingNumber === logicalMeetingCounter)
           );
           
           const isSubstitute = exceptionForToday?.type === 'SUBSTITUTION';
@@ -349,12 +360,14 @@ export const buildSchedule = (
             subjectId: bestTopic.topic.subjectId,
             topicId: bestTopic.topic.id,
             moduleId: moduleItem.module.id,
-            teacherId: bestTopic.topic.teacherId!,
+            teacherId: (bestTopic.topic.teacherId || subjects.find(s => s.id === bestTopic.topic.subjectId)?.defaultTeacherId) || null,
             isSubstitute: isSubstitute,
+            originalTeacherId: (isSubstitute && exceptionForToday && exceptionForToday.originalTeacherId) ? exceptionForToday.originalTeacherId : null,
             status: 'SCHEDULED',
-            meetingNumber: meetingNum,
+            meetingNumber: logicalMeetingCounter,
             classOrderIndex: 0 // Will be set later
           });
+          hasScheduledInThisMeeting = true;
        } else {
           // If failed for this specific slot, generate a gap
           gaps.push({ 
@@ -396,6 +409,10 @@ export const buildSchedule = (
       if (!isReserveMeeting) {
         pendingRecovery++;
       }
+    }
+
+    if (hasScheduledInThisMeeting) {
+      logicalMeetingCounter++;
     }
   }
 
