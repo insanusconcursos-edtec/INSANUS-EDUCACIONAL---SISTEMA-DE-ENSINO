@@ -1,14 +1,46 @@
-import React, { useRef } from 'react';
-import { Upload, Video, FileText, Type, X } from 'lucide-react';
+import React, { useRef, useEffect, useState } from 'react';
+import { Upload, Video, FileText, Type, X, Filter, Layers, Building2, Image as ImageIcon, Smartphone, Monitor } from 'lucide-react';
 import { Class } from '../../../../../types/class';
+import { classMetadataService, MetadataItem } from '../../../../../services/classMetadataService';
 
 interface ClassIdentityFormProps {
   data: Partial<Class>;
   onChange: (updates: Partial<Class>) => void;
+  onBannerDesktopChange?: (file: File) => void;
+  onBannerMobileChange?: (file: File) => void;
 }
 
-export const ClassIdentityForm: React.FC<ClassIdentityFormProps> = ({ data, onChange }) => {
+export const ClassIdentityForm: React.FC<ClassIdentityFormProps> = ({ 
+  data, 
+  onChange,
+  onBannerDesktopChange,
+  onBannerMobileChange
+}) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const bannerDesktopRef = useRef<HTMLInputElement>(null);
+  const bannerMobileRef = useRef<HTMLInputElement>(null);
+
+  const [categories, setCategories] = useState<MetadataItem[]>([]);
+  const [subcategories, setSubcategories] = useState<MetadataItem[]>([]);
+  const [organizations, setOrganizations] = useState<MetadataItem[]>([]);
+
+  useEffect(() => {
+    const fetchMetadata = async () => {
+      try {
+        const [cats, subs, orgs] = await Promise.all([
+          classMetadataService.getCategories(),
+          classMetadataService.getSubcategories(),
+          classMetadataService.getOrganizations()
+        ]);
+        setCategories(cats);
+        setSubcategories(subs);
+        setOrganizations(orgs);
+      } catch (error) {
+        console.error("Error fetching metadata:", error);
+      }
+    };
+    fetchMetadata();
+  }, []);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -21,12 +53,50 @@ export const ClassIdentityForm: React.FC<ClassIdentityFormProps> = ({ data, onCh
     }
   };
 
+  const handleBannerDesktopUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (onBannerDesktopChange) onBannerDesktopChange(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        onChange({ bannerUrlDesktop: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleBannerMobileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (onBannerMobileChange) onBannerMobileChange(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        onChange({ bannerUrlMobile: reader.result as string });
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const handleRemoveImage = (e: React.MouseEvent) => {
     e.stopPropagation();
     onChange({ coverImage: '' });
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  const handleRemoveBannerDesktop = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onChange({ bannerUrlDesktop: '' });
+    if (onBannerDesktopChange) onBannerDesktopChange(undefined as any);
+    if (bannerDesktopRef.current) bannerDesktopRef.current.value = '';
+  };
+
+  const handleRemoveBannerMobile = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onChange({ bannerUrlMobile: '' });
+    if (onBannerMobileChange) onBannerMobileChange(undefined as any);
+    if (bannerMobileRef.current) bannerMobileRef.current.value = '';
   };
 
   return (
@@ -95,6 +165,103 @@ export const ClassIdentityForm: React.FC<ClassIdentityFormProps> = ({ data, onCh
           </div>
         </div>
 
+        {/* Banners Section */}
+        <div className="col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-zinc-800">
+           {/* Banner Desktop */}
+           <div>
+            <label className="block text-xs font-bold text-zinc-400 uppercase mb-1 flex items-center gap-2">
+              <Monitor className="w-4 h-4" />
+              Banner Desktop (Horizontal)
+            </label>
+            <div 
+              onClick={() => bannerDesktopRef.current?.click()}
+              className={`relative border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center transition-all cursor-pointer group overflow-hidden h-40 ${
+                data.bannerUrlDesktop 
+                  ? 'border-brand-red/50 bg-zinc-900' 
+                  : 'border-zinc-700 text-zinc-500 hover:border-brand-red/50 hover:bg-zinc-800/50'
+              }`}
+            >
+              {data.bannerUrlDesktop ? (
+                <>
+                  <img 
+                    src={data.bannerUrlDesktop} 
+                    alt="Banner Desktop" 
+                    className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:opacity-30 transition-opacity"
+                  />
+                  <div className="relative z-10 flex flex-col items-center">
+                    <button 
+                      onClick={handleRemoveBannerDesktop}
+                      className="mb-1 p-1.5 bg-red-500/20 text-red-500 rounded-full hover:bg-red-500 hover:text-white transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    <span className="text-[10px] font-bold text-white uppercase tracking-wider">Alterar</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <ImageIcon className="w-6 h-6 mb-2 group-hover:text-brand-red transition-colors" />
+                  <span className="text-[10px] font-medium text-center">Upload Banner Horizontal</span>
+                </>
+              )}
+              <input 
+                type="file" 
+                accept="image/*" 
+                className="hidden" 
+                ref={bannerDesktopRef} 
+                onChange={handleBannerDesktopUpload} 
+              />
+            </div>
+          </div>
+
+          {/* Banner Mobile */}
+          <div>
+            <label className="block text-xs font-bold text-zinc-400 uppercase mb-1 flex items-center gap-2">
+              <Smartphone className="w-4 h-4" />
+              Banner Mobile (Vertical)
+            </label>
+            <div 
+              onClick={() => bannerMobileRef.current?.click()}
+              className={`relative border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center transition-all cursor-pointer group overflow-hidden h-40 ${
+                data.bannerUrlMobile 
+                  ? 'border-brand-red/50 bg-zinc-900' 
+                  : 'border-zinc-700 text-zinc-500 hover:border-brand-red/50 hover:bg-zinc-800/50'
+              }`}
+            >
+              {data.bannerUrlMobile ? (
+                <>
+                  <img 
+                    src={data.bannerUrlMobile} 
+                    alt="Banner Mobile" 
+                    className="absolute inset-0 w-full h-full object-cover opacity-50 group-hover:opacity-30 transition-opacity"
+                  />
+                  <div className="relative z-10 flex flex-col items-center">
+                    <button 
+                      onClick={handleRemoveBannerMobile}
+                      className="mb-1 p-1.5 bg-red-500/20 text-red-500 rounded-full hover:bg-red-500 hover:text-white transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                    <span className="text-[10px] font-bold text-white uppercase tracking-wider">Alterar</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <ImageIcon className="w-6 h-6 mb-2 group-hover:text-brand-red transition-colors" />
+                  <span className="text-[10px] font-medium text-center">Upload Banner Vertical</span>
+                </>
+              )}
+              <input 
+                type="file" 
+                accept="image/*" 
+                className="hidden" 
+                ref={bannerMobileRef} 
+                onChange={handleBannerMobileUpload} 
+              />
+            </div>
+          </div>
+        </div>
+
         {/* Tipo da Turma */}
         <div>
           <label className="block text-xs font-bold text-zinc-400 uppercase mb-1">Tipo da Turma *</label>
@@ -150,6 +317,60 @@ export const ClassIdentityForm: React.FC<ClassIdentityFormProps> = ({ data, onCh
             >
               Intensivo
             </button>
+          </div>
+        </div>
+
+        {/* Classificação da Turma */}
+        <div className="col-span-2 grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-zinc-800 pt-6 mt-2">
+          {/* Categoria */}
+          <div>
+            <label className="block text-xs font-bold text-zinc-400 uppercase mb-1 flex items-center gap-1">
+              <Filter className="w-3 h-3" /> Categoria
+            </label>
+            <select
+              value={data.category || ''}
+              onChange={(e) => onChange({ category: e.target.value })}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-red transition-colors appearance-none"
+            >
+              <option value="">Selecione...</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.name}>{cat.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Subcategoria */}
+          <div>
+            <label className="block text-xs font-bold text-zinc-400 uppercase mb-1 flex items-center gap-1">
+              <Layers className="w-3 h-3" /> Subcategoria
+            </label>
+            <select
+              value={data.subcategory || ''}
+              onChange={(e) => onChange({ subcategory: e.target.value })}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-red transition-colors appearance-none"
+            >
+              <option value="">Selecione...</option>
+              {subcategories.map((sub) => (
+                <option key={sub.id} value={sub.name}>{sub.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Órgão */}
+          <div>
+            <label className="block text-xs font-bold text-zinc-400 uppercase mb-1 flex items-center gap-1">
+              <Building2 className="w-3 h-3" /> Órgão
+            </label>
+            <select
+              value={data.organization || ''}
+              onChange={(e) => onChange({ organization: e.target.value })}
+              className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-brand-red transition-colors appearance-none"
+            >
+              <option value="">Selecione...</option>
+              {organizations.map((org) => (
+                <option key={org.id} value={org.name}>{org.name}</option>
+              ))}
+            </select>
           </div>
         </div>
 

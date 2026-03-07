@@ -1,14 +1,36 @@
-import { db } from './firebase';
+import { db, storage } from './firebase';
 import { collection, addDoc, updateDoc, deleteDoc, doc, getDocs, getDoc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { Class } from '../types/class';
 
 const CLASSES_COLLECTION = 'classes';
 
 export const classService = {
-  createClass: async (classData: Omit<Class, 'id'>): Promise<string> => {
+  uploadBanner: async (file: File): Promise<string> => {
     try {
+      // Utilizando 'course_banners' para aproveitar as regras de permissão já existentes no Storage
+      const storageRef = ref(storage, `course_banners/${Date.now()}_${file.name}`);
+      const snapshot = await uploadBytes(storageRef, file);
+      return await getDownloadURL(snapshot.ref);
+    } catch (error) {
+      console.error("Error uploading banner:", error);
+      throw error;
+    }
+  },
+
+  createClass: async (classData: Omit<Class, 'id'>, bannerDesktopFile?: File, bannerMobileFile?: File): Promise<string> => {
+    try {
+      const finalData: any = { ...classData };
+
+      if (bannerDesktopFile) {
+        finalData.bannerUrlDesktop = await classService.uploadBanner(bannerDesktopFile);
+      }
+      if (bannerMobileFile) {
+        finalData.bannerUrlMobile = await classService.uploadBanner(bannerMobileFile);
+      }
+
       const docRef = await addDoc(collection(db, CLASSES_COLLECTION), {
-        ...classData,
+        ...finalData,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       });
@@ -19,11 +41,20 @@ export const classService = {
     }
   },
 
-  updateClass: async (id: string, classData: Partial<Class>): Promise<void> => {
+  updateClass: async (id: string, classData: Partial<Class>, bannerDesktopFile?: File, bannerMobileFile?: File): Promise<void> => {
     try {
+      const finalData: any = { ...classData };
+
+      if (bannerDesktopFile) {
+        finalData.bannerUrlDesktop = await classService.uploadBanner(bannerDesktopFile);
+      }
+      if (bannerMobileFile) {
+        finalData.bannerUrlMobile = await classService.uploadBanner(bannerMobileFile);
+      }
+
       const classRef = doc(db, CLASSES_COLLECTION, id);
       await updateDoc(classRef, {
-        ...classData,
+        ...finalData,
         updatedAt: new Date().toISOString()
       });
     } catch (error) {

@@ -1,33 +1,61 @@
-import React, { useState } from 'react';
-import { ChevronDown, ChevronRight, FileText, Link as LinkIcon, CheckCircle, Clock, AlertCircle } from 'lucide-react';
-import { Subject, Topic, Module } from '../../../../../../types/curriculum';
-import { ClassScheduleEvent } from '../../../../../../types/schedule';
-import { Teacher } from '../../../../../../types/teacher';
+import React, { useState, useEffect } from 'react';
+import { ChevronDown, ChevronRight, FileText, Link as LinkIcon, CheckCircle, Clock, AlertCircle, BookOpen } from 'lucide-react';
+import { Subject, Topic } from '../../../types/curriculum';
+import { ClassScheduleEvent } from '../../../types/schedule';
+import { Teacher } from '../../../types/teacher';
 import { format } from 'date-fns';
 import { ptBR } from 'date-fns/locale';
-import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { useAuth } from '../../../../../../contexts/AuthContext';
-import { openWatermarkedPdf } from '../../../../../../utils/pdfSecurityService';
+import { useAuth } from '../../../contexts/AuthContext';
+import { openWatermarkedPdf } from '../../../utils/pdfSecurityService';
+import { classScheduleService } from '../../../services/classScheduleService';
+import { curriculumService } from '../../../services/curriculumService';
+import { teacherService } from '../../../services/teacherService';
 
-interface PedagogicalPlanningProps {
-  subjects: Subject[];
-  topics: Topic[];
-  modules: Module[];
-  events: ClassScheduleEvent[];
-  teachers: Teacher[];
+interface StudentPedagogicalPlanningProps {
+  classId: string;
 }
 
-export function PedagogicalPlanning({ subjects, topics, modules, events, teachers }: PedagogicalPlanningProps) {
+export function StudentPedagogicalPlanning({ classId }: StudentPedagogicalPlanningProps) {
   const { currentUser, userData } = useAuth();
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [topics, setTopics] = useState<Topic[]>([]);
+  const [events, setEvents] = useState<ClassScheduleEvent[]>([]);
+  const [teachers, setTeachers] = useState<Teacher[]>([]);
+  const [loading, setLoading] = useState(true);
+
   const [expandedSubjects, setExpandedSubjects] = useState<Set<string>>(new Set());
   const [expandedTopics, setExpandedTopics] = useState<Set<string>>(new Set());
   const [expandedModules, setExpandedModules] = useState<Set<string>>(new Set());
 
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const [eventsData, subjectsData, topicsData, teachersData] = await Promise.all([
+          classScheduleService.getScheduleEventsByClass(classId),
+          curriculumService.getSubjectsByClass(classId),
+          curriculumService.getTopicsByClass(classId),
+          teacherService.getTeachers()
+        ]);
+
+        setEvents(eventsData);
+        setSubjects(subjectsData);
+        setTopics(topicsData);
+        setTeachers(teachersData);
+      } catch (error) {
+        console.error("Error loading planning data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadData();
+  }, [classId]);
+
   const handleOpenPdf = async (url: string, title: string) => {
     try {
       await openWatermarkedPdf(url, {
-        email: currentUser?.email || 'admin@insanus.com',
+        email: currentUser?.email || 'aluno@insanus.com',
         cpf: userData?.cpf || '000.000.000-00'
       });
     } catch (error) {
@@ -71,8 +99,21 @@ export function PedagogicalPlanning({ subjects, topics, modules, events, teacher
     topics.some(topic => topic.subjectId === subject.id)
   );
 
+  if (loading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-red-500"></div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 animate-in fade-in duration-500">
+      <div className="flex items-center gap-2 mb-6">
+        <BookOpen className="w-6 h-6 text-red-500" />
+        <h2 className="text-xl font-bold text-white">Planejamento Pedagógico</h2>
+      </div>
+
       {activeSubjects.map(subject => {
         const subjectEvents = events.filter(e => e.subjectId === subject.id);
         const completedEvents = subjectEvents.filter(e => e.status === 'COMPLETED');
@@ -83,11 +124,11 @@ export function PedagogicalPlanning({ subjects, topics, modules, events, teacher
           .sort((a, b) => (a.order || 0) - (b.order || 0));
 
         return (
-          <div key={subject.id} className="border border-zinc-800 rounded-lg overflow-hidden bg-zinc-900/50">
+          <div key={subject.id} className="border border-zinc-800 rounded-lg overflow-hidden bg-black">
             {/* Subject Header */}
             <button
               onClick={() => toggleSubject(subject.id)}
-              className="w-full flex items-center justify-between p-4 hover:bg-zinc-800/50 transition-colors"
+              className="w-full flex items-center justify-between p-4 hover:bg-zinc-900 transition-colors"
             >
               <div className="flex items-center gap-3">
                 {isExpanded ? <ChevronDown className="w-5 h-5 text-zinc-400" /> : <ChevronRight className="w-5 h-5 text-zinc-400" />}
@@ -114,7 +155,7 @@ export function PedagogicalPlanning({ subjects, topics, modules, events, teacher
 
             {/* Subject Content (Topics) */}
             {isExpanded && (
-              <div className="border-t border-zinc-800 bg-zinc-900/30">
+              <div className="border-t border-zinc-800 bg-black">
                 {subjectTopics.map(topic => {
                   const isTopicExpanded = expandedTopics.has(topic.id);
                   const topicModules = topic.modules || [];
@@ -124,7 +165,7 @@ export function PedagogicalPlanning({ subjects, topics, modules, events, teacher
                       {/* Topic Header */}
                       <button
                         onClick={() => toggleTopic(topic.id)}
-                        className="w-full flex items-center justify-between p-3 pl-8 hover:bg-zinc-800/30 transition-colors"
+                        className="w-full flex items-center justify-between p-3 pl-8 hover:bg-zinc-900 transition-colors"
                       >
                         <div className="flex items-center gap-3">
                           {isTopicExpanded ? <ChevronDown className="w-4 h-4 text-zinc-500" /> : <ChevronRight className="w-4 h-4 text-zinc-500" />}
@@ -137,7 +178,7 @@ export function PedagogicalPlanning({ subjects, topics, modules, events, teacher
 
                       {/* Topic Content (Modules) */}
                       {isTopicExpanded && (
-                        <div className="bg-zinc-950/30 pl-12 pr-4 py-2 space-y-2">
+                        <div className="bg-black pl-12 pr-4 py-2 space-y-2">
                           {topicModules.map(module => {
                             const isModuleExpanded = expandedModules.has(module.id);
                             const moduleEvents = events.filter(e => e.moduleId === module.id)
@@ -146,11 +187,11 @@ export function PedagogicalPlanning({ subjects, topics, modules, events, teacher
                             const moduleContents = module.contents || [];
 
                             return (
-                              <div key={module.id} className="border border-zinc-800 rounded-md overflow-hidden bg-zinc-900">
+                              <div key={module.id} className="border border-zinc-800 rounded-md overflow-hidden bg-black">
                                 {/* Module Header */}
                                 <button
                                   onClick={() => toggleModule(module.id)}
-                                  className="w-full flex items-center justify-between p-3 hover:bg-zinc-800/50 transition-colors"
+                                  className="w-full flex items-center justify-between p-3 hover:bg-zinc-900 transition-colors"
                                 >
                                   <div className="flex items-center gap-3">
                                     {isModuleExpanded ? <ChevronDown className="w-4 h-4 text-zinc-500" /> : <ChevronRight className="w-4 h-4 text-zinc-500" />}
@@ -170,7 +211,7 @@ export function PedagogicalPlanning({ subjects, topics, modules, events, teacher
 
                                 {/* Module Content (Materials & Classes) */}
                                 {isModuleExpanded && (
-                                  <div className="p-4 space-y-6 border-t border-zinc-800 bg-zinc-950/50">
+                                  <div className="p-4 space-y-6 border-t border-zinc-800 bg-black">
                                     
                                     {/* Materials Section */}
                                     {moduleContents.length > 0 && (
@@ -189,7 +230,7 @@ export function PedagogicalPlanning({ subjects, topics, modules, events, teacher
                                               }}
                                               className="w-full text-left flex items-center gap-3 p-3 rounded-md bg-zinc-900 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800 transition-all group"
                                             >
-                                              <div className="p-2 rounded-md bg-zinc-950 border border-zinc-800 group-hover:border-zinc-700">
+                                              <div className="p-2 rounded-md bg-black border border-zinc-800 group-hover:border-zinc-700">
                                                 {content.type === 'PDF' ? (
                                                   <FileText className="w-4 h-4 text-red-400" />
                                                 ) : (
@@ -304,7 +345,7 @@ export function PedagogicalPlanning({ subjects, topics, modules, events, teacher
         <div className="text-center py-12 border border-dashed border-zinc-800 rounded-lg bg-zinc-900/30">
           <AlertCircle className="w-8 h-8 text-zinc-600 mx-auto mb-3" />
           <h3 className="text-zinc-400 font-medium">Nenhuma disciplina encontrada</h3>
-          <p className="text-zinc-500 text-sm mt-1">Cadastre disciplinas e tópicos para visualizar o planejamento.</p>
+          <p className="text-zinc-500 text-sm mt-1">O planejamento pedagógico será disponibilizado em breve.</p>
         </div>
       )}
     </div>

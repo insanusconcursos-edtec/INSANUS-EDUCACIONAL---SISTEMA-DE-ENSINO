@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Plus, Trash2, Edit2, ChevronDown, ChevronUp, AlertTriangle, BookOpen, User, CheckSquare, Square, Save } from 'lucide-react';
+import { Plus, Trash2, Edit2, ChevronDown, ChevronUp, AlertTriangle, BookOpen, User, CheckSquare, Square, Save, FileText, X, Loader2 } from 'lucide-react';
 import { Class } from '../../../../../types/class';
-import { Subject, Topic, Module } from '../../../../../types/curriculum';
+import { Subject, Topic, Module, ModuleContent } from '../../../../../types/curriculum';
 import { Teacher } from '../../../../../types/teacher';
 import { curriculumService } from '../../../../../services/curriculumService';
 import { teacherService } from '../../../../../services/teacherService';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
+import { storage } from '../../../../../services/firebase';
 
 interface SubjectsTabProps {
   cls: Class;
@@ -31,9 +33,10 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls, onUpdate }) => {
   const [editingModule, setEditingModule] = useState<Module | null>(null);
   const [activeTopicId, setActiveTopicId] = useState<string | null>(null);
   const [moduleDeleteModal, setModuleDeleteModal] = useState<{ isOpen: boolean, topicId: string | null, moduleId: string | null }>({ isOpen: false, topicId: null, moduleId: null });
-  const [newModule, setNewModule] = useState({ name: '', classesCount: 1 });
+  const [newModule, setNewModule] = useState<{ name: string; classesCount: number; contents: ModuleContent[] }>({ name: '', classesCount: 1, contents: [] });
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncSuccess, setSyncSuccess] = useState(false);
+  const [isUploadingPdf, setIsUploadingPdf] = useState(false);
 
   // Fetch Data
   const fetchData = async () => {
@@ -351,14 +354,15 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls, onUpdate }) => {
       if (editingModule) {
         updatedModules = currentModules.map(m => 
           m.id === editingModule.id 
-            ? { ...m, name: newModule.name, classesCount: Number(newModule.classesCount) }
+            ? { ...m, name: newModule.name, classesCount: Number(newModule.classesCount), contents: newModule.contents }
             : m
         );
       } else {
         const newMod: Module = {
           id: Date.now().toString(),
           name: newModule.name,
-          classesCount: Number(newModule.classesCount)
+          classesCount: Number(newModule.classesCount),
+          contents: newModule.contents
         };
         updatedModules = [...currentModules, newMod];
       }
@@ -373,7 +377,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls, onUpdate }) => {
       
       setIsModuleModalOpen(false);
       setEditingModule(null);
-      setNewModule({ name: '', classesCount: 1 });
+      setNewModule({ name: '', classesCount: 1, contents: [] });
 
       if (onUpdate) await onUpdate();
     } catch (error) {
@@ -439,6 +443,55 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls, onUpdate }) => {
       console.error("Error moving module:", error);
       fetchData(); // Revert on error
     }
+  };
+
+  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || !e.target.files[0]) return;
+    
+    const file = e.target.files[0];
+    setIsUploadingPdf(true);
+
+    try {
+      const fileRef = ref(storage, `class-materials/modules/${Date.now()}_${file.name}`);
+      await uploadBytes(fileRef, file);
+      const downloadUrl = await getDownloadURL(fileRef);
+
+      const newContent: ModuleContent = {
+        id: Date.now().toString(),
+        type: 'PDF',
+        title: file.name,
+        url: downloadUrl,
+        createdAt: new Date().toISOString()
+      };
+
+      setNewModule(prev => ({
+        ...prev,
+        contents: [...(prev.contents || []), newContent]
+      }));
+    } catch (error) {
+      console.error("Error uploading PDF:", error);
+      alert("Erro ao fazer upload do PDF. Tente novamente.");
+    } finally {
+      setIsUploadingPdf(false);
+    }
+  };
+
+  const handleRemovePdf = (contentId: string) => {
+    if (window.confirm('Tem certeza que deseja excluir este material?')) {
+      setNewModule(prev => ({
+        ...prev,
+        contents: prev.contents.filter(c => c.id !== contentId)
+      }));
+    }
+  };
+
+  const handleUpdatePdfTitle = (contentId: string, newTitle: string) => {
+    setNewModule(prev => ({
+      ...prev,
+      contents: prev.contents.map(c => 
+        c.id === contentId ? { ...c, title: newTitle } : c
+      )
+    }));
   };
 
   const handleSyncGrade = async () => {
@@ -703,7 +756,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls, onUpdate }) => {
                                 <button
                                   onClick={() => {
                                     setEditingModule(module);
-                                    setNewModule({ name: module.name, classesCount: module.classesCount });
+                                    setNewModule({ name: module.name, classesCount: module.classesCount, contents: module.contents || [] });
                                     setActiveTopicId(topic.id);
                                     setIsModuleModalOpen(true);
                                   }}
@@ -725,7 +778,7 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls, onUpdate }) => {
                         <button
                           onClick={() => {
                             setEditingModule(null);
-                            setNewModule({ name: '', classesCount: 1 });
+                            setNewModule({ name: '', classesCount: 1, contents: [] });
                             setActiveTopicId(topic.id);
                             setIsModuleModalOpen(true);
                           }}
@@ -1049,6 +1102,55 @@ export const SubjectsTab: React.FC<SubjectsTabProps> = ({ cls, onUpdate }) => {
                 <p className="text-[10px] text-zinc-600 mt-1">
                   Quantas aulas são necessárias para este módulo?
                 </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-zinc-400 uppercase mb-2">Materiais de Apoio (PDF)</label>
+                
+                <div className="space-y-2 mb-3">
+                  {newModule.contents?.map(content => (
+                    <div key={content.id} className="flex items-center gap-2 bg-zinc-950 p-2 rounded border border-zinc-800">
+                      <FileText className="w-4 h-4 text-zinc-500 shrink-0" />
+                      <input
+                        type="text"
+                        value={content.title}
+                        onChange={(e) => handleUpdatePdfTitle(content.id, e.target.value)}
+                        className="flex-1 bg-transparent border-none text-xs text-white focus:ring-0 p-0"
+                        placeholder="Nome do arquivo"
+                      />
+                      <button
+                        onClick={() => handleRemovePdf(content.id)}
+                        className="p-1 text-zinc-500 hover:text-red-500 hover:bg-zinc-900 rounded transition-colors"
+                        title="Remover arquivo"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="file"
+                    accept="application/pdf"
+                    onChange={handlePdfUpload}
+                    disabled={isUploadingPdf}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-not-allowed"
+                  />
+                  <div className={`w-full py-2 border border-dashed border-zinc-800 rounded-lg flex items-center justify-center gap-2 transition-colors ${isUploadingPdf ? 'bg-zinc-900 opacity-50' : 'hover:border-brand-red/50 hover:bg-zinc-900/50'}`}>
+                    {isUploadingPdf ? (
+                      <>
+                        <Loader2 className="w-4 h-4 text-brand-red animate-spin" />
+                        <span className="text-xs font-bold text-zinc-500 uppercase">Enviando...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 text-zinc-500" />
+                        <span className="text-xs font-bold text-zinc-500 uppercase">Adicionar PDF</span>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 

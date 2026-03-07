@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { 
   X, Clock, Trash2, Plus, 
   CheckCircle, Layers, GraduationCap,
-  Loader2, PlayCircle
+  Loader2, PlayCircle, Users
 } from 'lucide-react';
 import { 
   Student, 
@@ -15,6 +15,8 @@ import {
 import { getPlans, Plan } from '../../../services/planService';
 import { getSimulatedClasses, SimulatedClass } from '../../../services/simulatedService';
 import { courseService } from '../../../services/courseService';
+import { classService } from '../../../services/classService';
+import { Class } from '../../../types/class';
 import { OnlineCourse } from '../../../types/course';
 import ConfirmationModal from '../../ui/ConfirmationModal';
 
@@ -24,7 +26,7 @@ interface StudentAccessManagerProps {
   onUpdate: () => void; // Trigger refresh on parent
 }
 
-type ModalType = 'ADD_PLAN' | 'ADD_SIMULATED' | 'ADD_COURSE' | 'EXTEND' | null;
+type ModalType = 'ADD_PLAN' | 'ADD_SIMULATED' | 'ADD_COURSE' | 'ADD_PRESENTIAL' | 'EXTEND' | null;
 
 const StudentAccessManager: React.FC<StudentAccessManagerProps> = ({ student: initialStudent, onClose, onUpdate }) => {
   // State
@@ -32,6 +34,7 @@ const StudentAccessManager: React.FC<StudentAccessManagerProps> = ({ student: in
   const [plans, setPlans] = useState<Plan[]>([]);
   const [simClasses, setSimClasses] = useState<SimulatedClass[]>([]);
   const [courses, setCourses] = useState<OnlineCourse[]>([]);
+  const [presentialClasses, setPresentialClasses] = useState<Class[]>([]);
   const [loadingData, setLoadingData] = useState(true);
   
   // Modal State
@@ -52,14 +55,16 @@ const StudentAccessManager: React.FC<StudentAccessManagerProps> = ({ student: in
   useEffect(() => {
     const loadContent = async () => {
       try {
-        const [p, s, c] = await Promise.all([
+        const [p, s, c, pc] = await Promise.all([
           getPlans(),
           getSimulatedClasses(),
-          courseService.getCourses()
+          courseService.getCourses(),
+          classService.getClasses()
         ]);
         setPlans(p);
         setSimClasses(s);
         setCourses(c);
+        setPresentialClasses(pc);
       } catch (error) {
         console.error("Error loading content:", error);
       } finally {
@@ -119,7 +124,7 @@ const StudentAccessManager: React.FC<StudentAccessManagerProps> = ({ student: in
     
     try {
       let title = '';
-      let type: 'plan' | 'simulated_class' | 'course' = 'plan';
+      let type: 'plan' | 'simulated_class' | 'course' | 'presential_class' = 'plan';
 
       if (activeModal === 'ADD_PLAN') {
         type = 'plan';
@@ -133,6 +138,10 @@ const StudentAccessManager: React.FC<StudentAccessManagerProps> = ({ student: in
         type = 'course';
         const c = courses.find(x => x.id === selectedContentId);
         title = c?.title || 'Curso Desconhecido';
+      } else if (activeModal === 'ADD_PRESENTIAL') {
+        type = 'presential_class';
+        const pc = presentialClasses.find(x => x.id === selectedContentId);
+        title = pc?.name || 'Turma Presencial Desconhecida';
       }
 
       await grantStudentAccess(localStudent.uid, {
@@ -207,6 +216,7 @@ const StudentAccessManager: React.FC<StudentAccessManagerProps> = ({ student: in
   const planAccess = localStudent.access?.filter(a => a.type === 'plan' && a.isActive) || [];
   const simAccess = localStudent.access?.filter(a => a.type === 'simulated_class' && a.isActive) || [];
   const courseAccess = localStudent.access?.filter(a => a.type === 'course' && a.isActive) || [];
+  const presentialAccess = localStudent.access?.filter(a => a.type === 'presential_class' && a.isActive) || [];
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/90 backdrop-blur-sm animate-in fade-in duration-300">
@@ -239,10 +249,10 @@ const StudentAccessManager: React.FC<StudentAccessManagerProps> = ({ student: in
         </div>
 
         {/* Content Body */}
-        <div className="flex-1 overflow-hidden grid grid-cols-1 lg:grid-cols-3">
+        <div className="flex-1 overflow-hidden grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
             
             {/* COLUMN 1: PLANS (RED) */}
-            <div className="flex flex-col border-b lg:border-b-0 lg:border-r border-zinc-900 bg-zinc-900/10">
+            <div className="flex flex-col border-b md:border-b-0 md:border-r border-zinc-900 bg-zinc-900/10">
                 <div className="p-4 border-b border-zinc-900 flex items-center justify-between bg-zinc-950/50">
                     <div className="flex items-center gap-2 text-red-500">
                         <Layers size={18} />
@@ -277,7 +287,7 @@ const StudentAccessManager: React.FC<StudentAccessManagerProps> = ({ student: in
             </div>
 
             {/* COLUMN 2: SIMULATED (ORANGE) */}
-            <div className="flex flex-col border-b lg:border-b-0 lg:border-r border-zinc-900 bg-zinc-900/10">
+            <div className="flex flex-col border-b md:border-b-0 md:border-r border-zinc-900 bg-zinc-900/10">
                 <div className="p-4 border-b border-zinc-900 flex items-center justify-between bg-zinc-950/50">
                     <div className="flex items-center gap-2 text-orange-500">
                         <GraduationCap size={18} />
@@ -312,7 +322,7 @@ const StudentAccessManager: React.FC<StudentAccessManagerProps> = ({ student: in
             </div>
 
             {/* COLUMN 3: COURSES (BLUE) */}
-            <div className="flex flex-col bg-zinc-900/10">
+            <div className="flex flex-col border-b md:border-b-0 md:border-r border-zinc-900 bg-zinc-900/10">
                 <div className="p-4 border-b border-zinc-900 flex items-center justify-between bg-zinc-950/50">
                     <div className="flex items-center gap-2 text-blue-500">
                         <PlayCircle size={18} />
@@ -335,6 +345,41 @@ const StudentAccessManager: React.FC<StudentAccessManagerProps> = ({ student: in
                                 key={access.id} 
                                 access={access} 
                                 colorClass="blue"
+                                onRevoke={() => handleRequestRevoke(access)}
+                                onExtend={() => openExtendModal(access.id)}
+                                getDaysRemaining={getDaysRemaining}
+                                calculateProgress={calculateProgress}
+                                formatDate={formatDate}
+                            />
+                        ))
+                    )}
+                </div>
+            </div>
+
+            {/* COLUMN 4: PRESENTIAL (EMERALD) */}
+            <div className="flex flex-col bg-zinc-900/10">
+                <div className="p-4 border-b border-zinc-900 flex items-center justify-between bg-zinc-950/50">
+                    <div className="flex items-center gap-2 text-emerald-500">
+                        <Users size={18} />
+                        <span className="text-sm font-black uppercase tracking-widest">Turmas Presenciais</span>
+                    </div>
+                    <button 
+                        onClick={() => setActiveModal('ADD_PRESENTIAL')}
+                        className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-black uppercase tracking-widest rounded-lg shadow-lg shadow-emerald-900/20 transition-all flex items-center gap-2"
+                    >
+                        <Plus size={12} /> Liberar Turma
+                    </button>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4 space-y-3 custom-scrollbar">
+                    {presentialAccess.length === 0 ? (
+                        <EmptyState text="Nenhuma turma ativa" icon={Users} />
+                    ) : (
+                        presentialAccess.map(access => (
+                            <AccessCard 
+                                key={access.id} 
+                                access={access} 
+                                colorClass="emerald"
                                 onRevoke={() => handleRequestRevoke(access)}
                                 onExtend={() => openExtendModal(access.id)}
                                 getDaysRemaining={getDaysRemaining}
@@ -376,7 +421,9 @@ const StudentAccessManager: React.FC<StudentAccessManagerProps> = ({ student: in
                                     ? plans.map(p => <option key={p.id} value={p.id}>{p.title}</option>)
                                     : activeModal === 'ADD_SIMULADO'
                                         ? simClasses.map(s => <option key={s.id} value={s.id}>{s.title}</option>)
-                                        : courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)
+                                        : activeModal === 'ADD_COURSE'
+                                            ? courses.map(c => <option key={c.id} value={c.id}>{c.title}</option>)
+                                            : presentialClasses.map(pc => <option key={pc.id} value={pc.id}>{pc.name}</option>)
                                 }
                             </select>
                         </div>
@@ -462,6 +509,8 @@ const AccessCard = ({ access, colorClass, onRevoke, onExtend, getDaysRemaining, 
         colors = { border: 'border-orange-500/30 hover:border-orange-500/60', text: 'text-orange-400', bg: 'bg-orange-500', barBg: 'bg-orange-900/20' };
     } else if (colorClass === 'blue') {
         colors = { border: 'border-blue-500/30 hover:border-blue-500/60', text: 'text-blue-400', bg: 'bg-blue-500', barBg: 'bg-blue-900/20' };
+    } else if (colorClass === 'emerald') {
+        colors = { border: 'border-emerald-500/30 hover:border-emerald-500/60', text: 'text-emerald-400', bg: 'bg-emerald-500', barBg: 'bg-emerald-900/20' };
     }
 
     return (

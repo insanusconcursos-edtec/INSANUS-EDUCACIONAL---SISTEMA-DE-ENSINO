@@ -1,9 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Plus, Search, Filter, Calendar, Users, Edit2, Trash2, AlertTriangle, ChevronDown, ChevronUp, Settings } from 'lucide-react';
+import { Plus, Search, Filter, Calendar, Users, Edit2, Trash2, AlertTriangle, ChevronDown, ChevronUp, Settings, Layers } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { Class } from '../../../../types/class';
 import { classService } from '../../../../services/classService';
+import { classMetadataService, MetadataItem } from '../../../../services/classMetadataService';
 import { ClassFormModal } from './ClassFormModal';
+import { ClassMetadataManagerModal } from './ClassMetadataManagerModal';
 import { formatSafeDateLocal } from '../../../../utils/dateUtils';
 
 // Helper functions moved outside component to be used by ClassCard
@@ -139,6 +141,12 @@ export const ClassList: React.FC = () => {
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean, classId: string | null }>({ isOpen: false, classId: null });
   const [isDeleting, setIsDeleting] = useState(false);
 
+  // Metadata States
+  const [isMetadataModalOpen, setIsMetadataModalOpen] = useState(false);
+  const [categories, setCategories] = useState<MetadataItem[]>([]);
+  const [subcategories, setSubcategories] = useState<MetadataItem[]>([]);
+  const [organizations, setOrganizations] = useState<MetadataItem[]>([]);
+
   // Filters
   const [searchTerm, setSearchTerm] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
@@ -157,8 +165,24 @@ export const ClassList: React.FC = () => {
     }
   };
 
+  const fetchMetadata = async () => {
+    try {
+      const [cats, subs, orgs] = await Promise.all([
+        classMetadataService.getCategories(),
+        classMetadataService.getSubcategories(),
+        classMetadataService.getOrganizations()
+      ]);
+      setCategories(cats);
+      setSubcategories(subs);
+      setOrganizations(orgs);
+    } catch (error) {
+      console.error("Error fetching metadata:", error);
+    }
+  };
+
   useEffect(() => {
     fetchClasses();
+    fetchMetadata();
   }, []);
 
   const confirmDelete = async () => {
@@ -221,39 +245,50 @@ export const ClassList: React.FC = () => {
               className="w-full bg-zinc-900 border border-zinc-700 rounded-lg pl-10 pr-4 py-2 text-sm text-zinc-300 focus:outline-none focus:border-brand-red transition-colors appearance-none"
             >
               <option value="">Todas Categorias</option>
-              <option value="CARREIRAS POLICIAIS">Carreiras Policiais</option>
-              <option value="TRIBUNAIS">Tribunais</option>
-              <option value="ADMINISTRATIVAS">Administrativas</option>
-              <option value="ENEM">ENEM</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.name}>{cat.name}</option>
+              ))}
             </select>
           </div>
 
           {/* Subcategory */}
           <div className="relative min-w-[180px]">
-            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <Layers className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
             <select 
               value={subcategoryFilter}
               onChange={(e) => setSubcategoryFilter(e.target.value)}
               className="w-full bg-zinc-900 border border-zinc-700 rounded-lg pl-10 pr-4 py-2 text-sm text-zinc-300 focus:outline-none focus:border-brand-red transition-colors appearance-none"
             >
               <option value="">Todas Subcategorias</option>
-              <option value="CARREIRAS FEDERAIS">Carreiras Federais</option>
-              <option value="POLÍCIAS CIVIS">Polícias Civis</option>
-              <option value="POLÍCIAS MILITARES">Polícias Militares</option>
+              {subcategories.map((sub) => (
+                <option key={sub.id} value={sub.name}>{sub.name}</option>
+              ))}
             </select>
           </div>
 
           {/* Organization */}
           <div className="relative min-w-[150px]">
-            <input 
-              type="text" 
-              placeholder="Órgão (ex: PC-AC)" 
+            <Filter className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-500" />
+            <select 
               value={orgFilter}
               onChange={(e) => setOrgFilter(e.target.value)}
-              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2 text-sm text-white focus:outline-none focus:border-brand-red transition-colors"
-            />
+              className="w-full bg-zinc-900 border border-zinc-700 rounded-lg pl-10 pr-4 py-2 text-sm text-zinc-300 focus:outline-none focus:border-brand-red transition-colors appearance-none"
+            >
+              <option value="">Todos Órgãos</option>
+              {organizations.map((org) => (
+                <option key={org.id} value={org.name}>{org.name}</option>
+              ))}
+            </select>
           </div>
         </div>
+
+        <button 
+          onClick={() => setIsMetadataModalOpen(true)}
+          className="flex items-center gap-2 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-lg font-bold uppercase text-xs tracking-wider transition-colors border border-zinc-700 shadow-lg"
+        >
+          <Settings className="w-4 h-4" />
+          Gerenciar
+        </button>
 
         <button 
           onClick={handleCreate}
@@ -292,6 +327,14 @@ export const ClassList: React.FC = () => {
           fetchClasses();
         }}
         classToEdit={selectedClass}
+      />
+
+      <ClassMetadataManagerModal
+        isOpen={isMetadataModalOpen}
+        onClose={() => {
+          setIsMetadataModalOpen(false);
+          fetchMetadata();
+        }}
       />
 
       {/* Delete Confirmation Modal */}

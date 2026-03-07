@@ -25,7 +25,7 @@ import { db, auth as mainAuth, firebaseConfig } from './firebase';
 
 export interface AccessItem {
   id: string; // Unique ID for this specific access grant
-  type: 'plan' | 'simulated_class' | 'course';
+  type: 'plan' | 'simulated_class' | 'course' | 'presential_class';
   targetId: string; // The ID of the Plan, Simulated Class, or Course
   title: string;
   days: number;
@@ -202,7 +202,7 @@ export const getStudentById = async (uid: string): Promise<Student | null> => {
 
 export const grantStudentAccess = async (
   uid: string, 
-  data: { type: 'plan' | 'simulated_class' | 'course'; targetId: string; title: string; days: number }
+  data: { type: 'plan' | 'simulated_class' | 'course' | 'presential_class'; targetId: string; title: string; days: number }
 ) => {
   const userRef = doc(db, 'users', uid);
   const userSnap = await getDoc(userRef);

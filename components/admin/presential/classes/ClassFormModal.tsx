@@ -49,6 +49,10 @@ export const ClassFormModal: React.FC<ClassFormModalProps> = ({ isOpen, onClose,
   const [formData, setFormData] = useState<Partial<Class>>(INITIAL_DATA);
   const [loading, setLoading] = useState(false);
   const [breakCount, setBreakCount] = useState(1); // Auxiliary state for structure form
+  
+  // States for banner files
+  const [bannerDesktopFile, setBannerDesktopFile] = useState<File | undefined>(undefined);
+  const [bannerMobileFile, setBannerMobileFile] = useState<File | undefined>(undefined);
 
   React.useEffect(() => {
     if (isOpen) {
@@ -64,6 +68,8 @@ export const ClassFormModal: React.FC<ClassFormModalProps> = ({ isOpen, onClose,
         setBreakCount(1);
       }
       setCurrentStep(1);
+      setBannerDesktopFile(undefined);
+      setBannerMobileFile(undefined);
     }
   }, [isOpen, classToEdit]);
 
@@ -138,9 +144,9 @@ export const ClassFormModal: React.FC<ClassFormModalProps> = ({ isOpen, onClose,
     try {
       setLoading(true);
       if (classToEdit && classToEdit.id) {
-        await classService.updateClass(classToEdit.id, formData);
+        await classService.updateClass(classToEdit.id, formData, bannerDesktopFile, bannerMobileFile);
       } else {
-        await classService.createClass(formData as Omit<Class, 'id'>);
+        await classService.createClass(formData as Omit<Class, 'id'>, bannerDesktopFile, bannerMobileFile);
       }
       onSuccess();
       onClose();
@@ -186,7 +192,12 @@ export const ClassFormModal: React.FC<ClassFormModalProps> = ({ isOpen, onClose,
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6 scrollbar-thin scrollbar-thumb-zinc-700">
           {currentStep === 1 && (
-            <ClassIdentityForm data={formData} onChange={updateFormData} />
+            <ClassIdentityForm 
+              data={formData} 
+              onChange={updateFormData} 
+              onBannerDesktopChange={setBannerDesktopFile}
+              onBannerMobileChange={setBannerMobileFile}
+            />
           )}
           {currentStep === 2 && (
             <ClassStructureForm 

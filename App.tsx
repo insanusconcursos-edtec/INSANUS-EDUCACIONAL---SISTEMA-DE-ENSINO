@@ -11,6 +11,8 @@ import { AdminCoursesTab } from './components/admin/courses/AdminCoursesTab'; //
 import PresentialClassesPage from './pages/admin/PresentialClasses'; // Nova Importação Presential
 import PresentialClassManager from './pages/admin/PresentialClassManager';
 import { StudentCoursesTab } from './components/student/courses/StudentCoursesTab'; // Nova Importação Student
+import { StudentPresentialTab } from './components/student/presential/StudentPresentialTab'; // Nova Importação Presential
+import { StudentPresentialDetails } from './pages/student/presential/StudentPresentialDetails'; // Nova Importação Detalhes Presencial
 import AdminLayout from './components/Layout/AdminLayout';
 import StudentLayout from './components/Layout/StudentLayout';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -87,6 +89,8 @@ const App: React.FC = () => {
             <Route path="edict" element={<StudentEdict />} />
             <Route path="simulated" element={<StudentSimulated />} />
             <Route path="courses" element={<StudentCoursesTab />} />
+            <Route path="presential" element={<StudentPresentialTab />} />
+            <Route path="presential/:classId" element={<StudentPresentialDetails />} />
             <Route path="config" element={<StudentConfigPage />} />
             
             {/* Fallback for old routes if any */}

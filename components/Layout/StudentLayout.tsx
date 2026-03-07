@@ -6,7 +6,7 @@ import PlanUpdateManager from '../student/PlanUpdateManager';
 
 const StudentLayout: React.FC = () => {
   const location = useLocation();
-  const isCourseArea = location.pathname.includes('/app/courses');
+  const isCourseArea = location.pathname.includes('/app/courses') || location.pathname.includes('/app/presential');
 
   return (
     <div className="flex flex-col h-screen bg-brand-black text-white font-sans overflow-hidden selection:bg-brand-red selection:text-white">
@@ -24,7 +24,12 @@ const StudentLayout: React.FC = () => {
         {/* Subtle Grid Background for Content Area */}
         <div className="absolute inset-0 pointer-events-none bg-[linear-gradient(to_right,#18181b_1px,transparent_1px),linear-gradient(to_bottom,#18181b_1px,transparent_1px)] bg-[size:4rem_4rem] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_0%,#000_70%,transparent_100%)] opacity-20"></div>
         
-        <div className="max-w-[1600px] mx-auto p-6 md:p-8 relative z-10">
+        <div className={
+          // Remove padding and max-width for Presential Details to allow full-width banner
+          /^\/app\/presential\/[^/]+$/.test(location.pathname)
+            ? "w-full p-0 relative z-10"
+            : "max-w-[1600px] mx-auto p-6 md:p-8 relative z-10"
+        }>
           <Outlet />
         </div>
       </main>

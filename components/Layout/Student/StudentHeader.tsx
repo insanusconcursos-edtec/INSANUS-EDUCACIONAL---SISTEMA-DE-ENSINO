@@ -12,12 +12,14 @@ const StudentHeader: React.FC = () => {
   // Detect Context
   const isSimulatedContext = location.pathname.includes('/app/simulated');
   const isCoursesContext = location.pathname.includes('/app/courses');
-  const isPlanContext = !isSimulatedContext && !isCoursesContext;
+  const isPresentialContext = location.pathname.includes('/app/presential');
+  const isPlanContext = !isSimulatedContext && !isCoursesContext && !isPresentialContext;
 
   // Lógica para o valor do Select Mobile
   let currentSelectValue = '/app/dashboard';
   if (isSimulatedContext) currentSelectValue = '/app/simulated';
   if (isCoursesContext) currentSelectValue = '/app/courses';
+  if (isPresentialContext) currentSelectValue = '/app/presential';
 
   const toggleFullScreen = () => {
     if (!document.fullscreenElement) {
@@ -84,6 +86,21 @@ const StudentHeader: React.FC = () => {
           <PlayCircle className="w-3 h-3 md:w-4 md:h-4" />
           <span>CURSOS</span>
         </Link>
+
+        <div className="w-px h-4 bg-zinc-800"></div>
+
+        <Link
+          to="/app/presential"
+          className={`
+            relative flex items-center gap-2 px-2 md:px-6 py-2 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all duration-300
+            ${isPresentialContext 
+              ? 'bg-emerald-600 text-white shadow-[0_0_20px_rgba(5,150,105,0.3)]' 
+              : 'text-zinc-500 hover:text-white hover:bg-zinc-800'}
+          `}
+        >
+          <GraduationCap className="w-3 h-3 md:w-4 md:h-4" />
+          <span>PRESENCIAL</span>
+        </Link>
       </div>
 
       {/* 2. VERSÃO MOBILE (Select Dropdown) - Visível apenas em Mobile (flex md:hidden) */}
@@ -97,6 +114,7 @@ const StudentHeader: React.FC = () => {
                 <option value="/app/dashboard">📌 Planos</option>
                 <option value="/app/simulados">🎓 Simulados</option>
                 <option value="/app/courses">▶️ Cursos</option>
+                <option value="/app/presential">🏫 Presencial</option>
             </select>
             {/* Ícone de Seta customizado para o Select */}
             <div className="absolute inset-y-0 right-0 flex items-center px-2 pointer-events-none text-zinc-500">

@@ -17,6 +17,8 @@ export interface Class {
   id: string;
   name: string;
   coverImage: string;
+  bannerUrlDesktop?: string;
+  bannerUrlMobile?: string;
   type: ClassType;
   modality: ClassModality;
   hasRecordings: boolean;
