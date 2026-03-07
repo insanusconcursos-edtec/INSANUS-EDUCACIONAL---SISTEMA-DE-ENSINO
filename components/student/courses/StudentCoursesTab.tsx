@@ -101,7 +101,7 @@ export function StudentCoursesTab() {
   }
 
   return (
-    <div className="space-y-8 animate-in fade-in pb-20">
+    <div className="max-w-[1600px] mx-auto p-6 md:p-8 space-y-8 animate-in fade-in pb-20">
       
       {/* Título */}
       <div className="flex flex-col gap-2">
